@@ -10,7 +10,9 @@ import com.example.core.calendar.DeviceCalendarManager
 import com.example.data.AppEventEntity
 import kotlinx.coroutines.flow.asStateFlow
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Locale
+import java.util.TimeZone
 import com.example.core.health.HealthConnectDailyData
 import com.example.core.health.HealthConnectManager
 import com.example.core.health.HealthGoalMetric
@@ -131,7 +133,18 @@ data class DailyManagerUiState(
     val gmailMessages: List<com.example.core.google.GmailEmailItem> = emptyList(),
     val appEvents: List<AppEventEntity> = emptyList(),
     val deviceCalendarEvents: List<CalendarEventItem> = emptyList(),
-    val isDeviceCalendarSyncing: Boolean = false
+    val isDeviceCalendarSyncing: Boolean = false,
+    val superProtectionEnabled: Boolean = false,
+    val superProtectionWindowTime24: String = "13:00",
+    val superProtectionPreventRaisingUsageLimit: Boolean = true,
+    val superProtectionPreventRaisingLaunchLimit: Boolean = true,
+    val superProtectionPreventChangingCategory: Boolean = true,
+    val superProtectionPreventModifyingSchedules: Boolean = true,
+    val isSuperProtectionWindowOpenNow: Boolean = false,
+    val nextSuperProtectionWindowLabel: String = "من 01:00 م إلى 01:10 م",
+    val timeUntilSuperProtectionWindowMinutes: Int = 0,
+    val negativeScreenMinutesToday: Int = 0,
+    val positiveScreenMinutesToday: Int = 0
 )
 
 class DailyManagerViewModel(application: Application) : AndroidViewModel(application) {
@@ -235,17 +248,23 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
         },
         combine(googleCalendarEventsFlow, gmailMessagesFlow) { calEvents, emails ->
             Pair(calEvents, emails)
+        },
+        combine(repo.appEventsFlow, deviceCalendarEventsFlow, isDeviceCalendarSyncingFlow) { appEvs, devEvs, syncing ->
+            Triple(appEvs, devEvs, syncing)
         }
-    ) { group1, group2, group3 ->
-        Oct(
-            first = group1.first,
-            second = group1.second,
-            third = group1.third,
-            fourth = group2.first,
-            fifth = group2.second,
-            sixth = group2.third,
-            seventh = group3.first,
-            eighth = group3.second
+    ) { group1, group2, group3, group4 ->
+        LocalUiBundle(
+            nowMillis = group1.first,
+            selectedTaskCategory = group1.second,
+            statusBanner = group1.third,
+            backupPreview = group2.first,
+            isStandbyVisible = group2.second,
+            selectedCategoryId = group2.third,
+            googleCalendarEvents = group3.first,
+            gmailMessages = group3.second,
+            appEvents = group4.first,
+            deviceCalendarEvents = group4.second,
+            isDeviceCalendarSyncing = group4.third
         )
     }
 
@@ -255,7 +274,7 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
         fullDayFlow,
         insightsFlow,
         localUiFlow
-    ) { coreQuint, spQuint, fullDayQuint, insightsQuint, localQuint ->
+    ) { coreQuint, spQuint, fullDayQuint, insightsQuint, localBundle ->
         val settingsMap = coreQuint.first.associate { it.key to it.value }
         val isDark = settingsMap["dark_mode"] == "true"
         val savedPresetId = settingsMap["theme_preset"] ?: "emerald"
@@ -283,8 +302,8 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
             UmmAlQuraCalculator.findCityById(cityId)
         }
 
-        val schedule = UmmAlQuraCalculator.calculateScheduleForNow(city, localQuint.first)
-        val nowMillis = localQuint.first
+        val schedule = UmmAlQuraCalculator.calculateScheduleForNow(city, localBundle.nowMillis)
+        val nowMillis = localBundle.nowMillis
 
         val rawPrayerMap = coreQuint.fifth.associate {
             PrayerType.fromId(it.prayerName) to it.status
@@ -323,10 +342,10 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
         }
 
         val allMain = coreQuint.fourth.filter { it.parentTaskId == null }
-        val filteredMain = if (localQuint.second == "الكل") {
+        val filteredMain = if (localBundle.selectedTaskCategory == "الكل") {
             allMain
         } else {
-            allMain.filter { it.listCategory == localQuint.second }
+            allMain.filter { it.listCategory == localBundle.selectedTaskCategory }
         }
         val subtasksMap = coreQuint.fourth
             .filter { it.parentTaskId != null }
@@ -354,29 +373,83 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
         // حساب الحظر الفعلي الشامل (StayFree: الحد اليومي + الجداول الزمنية + قفل العقاب للعادات)
         val enforcedReasons = mutableMapOf<String, String>()
 
-        // 1. التطبيقات المحظورة دائماً أو التي تجاوزت الحد اليومي
+        // 1. التطبيقات المحظورة دائماً أو التي تجاوزت الحد اليومي أو حد مرات الفتح أو جدولها الخاص
         blockedApps.forEach { app ->
             val usedMins = usageOverview.usageByPackageMinutes[app.packageName] ?: 0
+            val launches = usageOverview.launchesByPackageToday[app.packageName] ?: 0
             if (app.isAlwaysBlocked) {
                 enforcedReasons[app.packageName] = "حظر دائم مفعل"
             } else if (app.dailyLimitMinutes > 0 && usedMins >= app.dailyLimitMinutes) {
                 enforcedReasons[app.packageName] = "انتهى الحد اليومي (${app.dailyLimitMinutes} د)"
+            } else if (app.dailyLaunchLimit > 0 && launches >= app.dailyLaunchLimit) {
+                enforcedReasons[app.packageName] = "تجاوزت حد مرات الفتح اليوم (${app.dailyLaunchLimit} مرات)"
+            } else if (app.specificBlockEnabled && isAppSpecificScheduleActive(app.specificBlockStartTime24, app.specificBlockEndTime24, app.specificBlockDays, localBundle.nowMillis)) {
+                enforcedReasons[app.packageName] = "جدول حظر خاص بالتطبيق"
             }
         }
 
-        // 2. جداول الحظر الزمنية النشطة حالياً
+        // 2. جداول الحظر الزمنية والذكية النشطة حالياً
         blockSchedules.forEach { sched ->
-            if (AppUsageMonitor.isScheduleCurrentlyInTimeWindow(sched, localQuint.first)) {
-                val pkgs = sched.blockedPackagesCsv.split(",")
-                    .map { it.trim() }
-                    .filter { it.isNotBlank() }
-                val targetPkgs = if (pkgs.isNotEmpty()) {
-                    pkgs
-                } else {
-                    blockedApps.filter { it.blockInSleepMode || it.blockInStudyMode }.map { it.packageName }
+            if (!sched.isEnabled || sched.scheduleType == "WAKE_ALARM") return@forEach
+            val pkgs = sched.blockedPackagesCsv.split(",")
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+            val catPkgs = if (sched.targetCategory.isNotBlank()) {
+                blockedApps.filter { it.category == sched.targetCategory }.map { it.packageName }
+            } else emptyList()
+            val targetPkgs = if (pkgs.isNotEmpty() || catPkgs.isNotEmpty()) {
+                (pkgs + catPkgs).distinct()
+            } else {
+                blockedApps.filter { it.blockInSleepMode || it.blockInStudyMode }.map { it.packageName }
+            }
+
+            when (sched.scheduleType) {
+                "PERMANENT", "PERMANENT_BLOCK" -> {
+                    targetPkgs.forEach { pkg -> enforcedReasons[pkg] = "إغلاق دائم: ${sched.title}" }
                 }
-                targetPkgs.forEach { pkg ->
-                    enforcedReasons[pkg] = "جدول الحظر: ${sched.title}"
+                "FOCUS_TIMER", "FOCUS_COUNTER" -> {
+                    if (StudyTimerManager.timerState.value.isActive) {
+                        targetPkgs.forEach { pkg -> enforcedReasons[pkg] = "تركيز العداد نشط: ${sched.title}" }
+                    }
+                }
+                "GROUP_USAGE_LIMIT" -> {
+                    val groupSum = targetPkgs.sumOf { usageOverview.usageByPackageMinutes[it] ?: 0 }
+                    if (sched.groupLimitMinutes > 0 && groupSum >= sched.groupLimitMinutes) {
+                        targetPkgs.forEach { pkg ->
+                            enforcedReasons[pkg] = "تجاوز الحد الجماعي للجدول (${sched.groupLimitMinutes} د): ${sched.title}"
+                        }
+                    }
+                }
+                "SESSION_LIMIT", "APP_TIMER_COOLDOWN" -> {
+                    targetPkgs.forEach { pkg ->
+                        val cooldownEnd = ProtectionManager.getCooldownEndTime(pkg)
+                        if (cooldownEnd != null && localBundle.nowMillis < cooldownEnd) {
+                            val remMins = ((cooldownEnd - localBundle.nowMillis) / 60_000L + 1).coerceAtLeast(1)
+                            enforcedReasons[pkg] = "فترة إغلاق مؤقتة (متبقي $remMins د): ${sched.title}"
+                        }
+                    }
+                }
+                else -> {
+                    if (AppUsageMonitor.isScheduleCurrentlyInTimeWindow(sched, localBundle.nowMillis)) {
+                        targetPkgs.forEach { pkg -> enforcedReasons[pkg] = "جدول الحظر: ${sched.title}" }
+                    }
+                }
+            }
+        }
+
+        var negativeScreenMinutes = 0
+        var positiveScreenMinutes = 0
+        val blockedAppsByPkg = blockedApps.associateBy { it.packageName }
+        usageOverview.usageByPackageMinutes.forEach { (pkg, mins) ->
+            val app = blockedAppsByPkg[pkg]
+            when (app?.usageImpact) {
+                "NEGATIVE" -> negativeScreenMinutes += mins
+                "POSITIVE" -> positiveScreenMinutes += mins
+                "IGNORED" -> {}
+                else -> {
+                    if (pkg in setOf("com.zhiliaoapp.musically", "com.instagram.android", "com.twitter.android", "com.snapchat.android")) {
+                        negativeScreenMinutes += mins
+                    }
                 }
             }
         }
@@ -456,6 +529,17 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
         val flipSnooze = settingsMap["flip_to_snooze_azan"] != "false"
         val persistentPrayerNotification = settingsMap["persistent_prayer_notification"] != "false"
 
+        val superEnabled = settingsMap["super_protection_enabled"]?.toBooleanStrictOrNull() ?: false
+        val superWindow = settingsMap["super_protection_window_time24"] ?: "13:00"
+        val superUsage = settingsMap["super_protection_prevent_raising_usage_limit"]?.toBooleanStrictOrNull() ?: true
+        val superLaunch = settingsMap["super_protection_prevent_raising_launch_limit"]?.toBooleanStrictOrNull() ?: true
+        val superCat = settingsMap["super_protection_prevent_changing_category"]?.toBooleanStrictOrNull() ?: true
+        val superSched = settingsMap["super_protection_prevent_modifying_schedules"]?.toBooleanStrictOrNull() ?: true
+
+        val isSuperWindowOpen = isSuperProtectionWindowOpen(superWindow, localBundle.nowMillis)
+        val superWindowLabel = formatWindowTimeRangeArabic(superWindow)
+        val minutesToSuperWindow = minutesUntilWindowOpens(superWindow, localBundle.nowMillis)
+
         DailyManagerUiState(
             isDarkMode = isDark,
             themePreset = themePreset,
@@ -474,12 +558,12 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
             activePenaltyHabitsCount = incompletePenaltyHabits.size,
             mainTasks = filteredMain,
             subtasksByParentId = subtasksMap,
-            selectedTaskCategory = localQuint.second,
+            selectedTaskCategory = localBundle.selectedTaskCategory,
             subjects = spQuint.first,
             studySessions = spQuint.second,
             autoOpenStandby = autoStandby,
             standbyOnCharging = chargingStandby,
-            isStandbyVisible = localQuint.fifth,
+            isStandbyVisible = localBundle.isStandbyVisible,
             blockedApps = blockedApps,
             blockSchedules = blockSchedules,
             usageOverview = usageOverview,
@@ -510,13 +594,27 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
             flipToSnoozeAzanEnabled = flipSnooze,
             persistentPrayerNotificationEnabled = persistentPrayerNotification,
             categories = spQuint.sixth,
-            selectedCategoryId = localQuint.sixth,
-            statusBannerMessage = localQuint.third,
-            backupJsonPreview = localQuint.fourth,
+            selectedCategoryId = localBundle.selectedCategoryId,
+            statusBannerMessage = localBundle.statusBanner,
+            backupJsonPreview = localBundle.backupPreview,
             isGoogleConnected = com.example.core.google.GoogleWorkspaceManager.isConnected(getApplication()),
             googleUserEmail = com.example.core.google.GoogleWorkspaceManager.getUserEmail(getApplication()),
-            googleCalendarEvents = localQuint.seventh,
-            gmailMessages = localQuint.eighth
+            googleCalendarEvents = localBundle.googleCalendarEvents,
+            gmailMessages = localBundle.gmailMessages,
+            appEvents = localBundle.appEvents,
+            deviceCalendarEvents = localBundle.deviceCalendarEvents,
+            isDeviceCalendarSyncing = localBundle.isDeviceCalendarSyncing,
+            superProtectionEnabled = superEnabled,
+            superProtectionWindowTime24 = superWindow,
+            superProtectionPreventRaisingUsageLimit = superUsage,
+            superProtectionPreventRaisingLaunchLimit = superLaunch,
+            superProtectionPreventChangingCategory = superCat,
+            superProtectionPreventModifyingSchedules = superSched,
+            isSuperProtectionWindowOpenNow = isSuperWindowOpen,
+            nextSuperProtectionWindowLabel = superWindowLabel,
+            timeUntilSuperProtectionWindowMinutes = minutesToSuperWindow,
+            negativeScreenMinutesToday = negativeScreenMinutes,
+            positiveScreenMinutesToday = positiveScreenMinutes
         )
     }.stateIn(
         scope = viewModelScope,
@@ -544,6 +642,9 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
             refreshAppUsageOverview()
             autoVerifyMosqueInBackground()
             pushWidgetSnapshot(schedule)
+            if (com.example.core.calendar.DeviceCalendarManager.hasCalendarPermission(getApplication())) {
+                refreshDeviceCalendarEvents(getApplication())
+            }
         }
         viewModelScope.launch {
             var tickCounter = 0
@@ -736,6 +837,51 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
         viewModelScope.launch {
             repo.deleteQuranBookmark(id)
             showBanner("تم حذف العلامة")
+        }
+    }
+
+    fun addQuranWirdHabit(
+        title: String = "ورد القرآن اليومي",
+        targetPages: Int? = null,
+        categoryId: String = ""
+    ) {
+        viewModelScope.launch {
+            val currentWird = uiState.value.wirdProgress
+            val target = targetPages ?: currentWird.dailyTargetPages.coerceAtLeast(1)
+            val defaultCategory = if (categoryId.isNotBlank()) categoryId else {
+                uiState.value.categories.firstOrNull { it.name.contains("دين") || it.name.contains("إسلام") || it.iconKey == "DEEN" }?.id ?: ""
+            }
+            val habit = repo.addHabit(
+                title = title,
+                description = "عادة الورد القرآني اليومي، تكتمل تلقائياً عند وضع علامة التوقف بالمصحف",
+                frequencyType = "DAILY",
+                targetCount = target,
+                unitLabel = "صفحة",
+                autoSource = "QURAN_WIRD",
+                categoryId = defaultCategory,
+                goalMode = "ACHIEVE"
+            )
+            if (currentWird.lastReadDateKey == todayKey && currentWird.todayPagesRead >= target) {
+                repo.completeTodayWirdWithStopMark(currentWird.currentPage, currentWird.bookmarkSurahName, currentWird.bookmarkAyahNumber)
+            }
+            pushWidgetSnapshot()
+            showBanner("تمت إضافة عادة «$title» بنجاح وربطها بورد المصحف 📖")
+        }
+    }
+
+    fun completeTodayWirdWithStopMark(
+        pageNumber: Int,
+        surahName: String,
+        ayahNumber: Int
+    ) {
+        viewModelScope.launch {
+            repo.completeTodayWirdWithStopMark(
+                pageNumber = pageNumber,
+                surahName = surahName,
+                ayahNumber = ayahNumber
+            )
+            pushWidgetSnapshot()
+            showBanner("تقبل الله! تم وضع علامة التوقف وإكمال عادة الورد القرآني لليوم بنجاح 🌟📖")
         }
     }
 
@@ -1500,6 +1646,188 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+    fun updateAppCustomDetails(
+        packageName: String,
+        appName: String,
+        category: String,
+        usageImpact: String,
+        dailyLimitMinutes: Int,
+        dailyLaunchLimit: Int,
+        specificStartTime24: String,
+        specificEndTime24: String,
+        specificDays: String,
+        specificEnabled: Boolean
+    ) {
+        viewModelScope.launch {
+            repo.updateAppCustomDetails(
+                packageName = packageName,
+                appName = appName,
+                category = category,
+                usageImpact = usageImpact,
+                dailyLimitMinutes = dailyLimitMinutes,
+                dailyLaunchLimit = dailyLaunchLimit,
+                specificStartTime24 = specificStartTime24,
+                specificEndTime24 = specificEndTime24,
+                specificDays = specificDays,
+                specificEnabled = specificEnabled
+            )
+            refreshAppUsageOverview()
+        }
+    }
+
+    fun toggleSuperProtection(
+        enabled: Boolean,
+        windowTime24: String,
+        preventUsageRaise: Boolean = true,
+        preventLaunchRaise: Boolean = true,
+        preventCategoryChange: Boolean = true,
+        preventScheduleMod: Boolean = true
+    ) {
+        viewModelScope.launch {
+            repo.updateSetting("super_protection_enabled", enabled.toString())
+            repo.updateSetting("super_protection_window_time24", windowTime24)
+            repo.updateSetting("super_protection_prevent_raising_usage_limit", preventUsageRaise.toString())
+            repo.updateSetting("super_protection_prevent_raising_launch_limit", preventLaunchRaise.toString())
+            repo.updateSetting("super_protection_prevent_changing_category", preventCategoryChange.toString())
+            repo.updateSetting("super_protection_prevent_modifying_schedules", preventScheduleMod.toString())
+        }
+    }
+
+    fun saveRichBlockSchedule(
+        id: String? = null,
+        title: String,
+        scheduleType: String,
+        startTime24: String = "04:30",
+        endTime24: String = "05:00",
+        daysOfWeek: String = "1,2,3,4,5,6,7",
+        blockedPackagesCsv: String = "",
+        targetCategory: String = "",
+        groupLimitMinutes: Int = 0,
+        sessionDurationMinutes: Int = 15,
+        sessionCooldownMinutes: Int = 30,
+        isEnabled: Boolean = true
+    ) {
+        viewModelScope.launch {
+            repo.saveRichBlockSchedule(
+                id = id,
+                title = title,
+                scheduleType = scheduleType,
+                startTime24 = startTime24,
+                endTime24 = endTime24,
+                daysOfWeek = daysOfWeek,
+                blockedPackagesCsv = blockedPackagesCsv,
+                targetCategory = targetCategory,
+                groupLimitMinutes = groupLimitMinutes,
+                sessionDurationMinutes = sessionDurationMinutes,
+                sessionCooldownMinutes = sessionCooldownMinutes,
+                isEnabled = isEnabled
+            )
+            showBanner("تم حفظ جدول الحظر «$title»")
+        }
+    }
+
+    fun startAppSession(packageName: String, durationMinutes: Int) {
+        ProtectionManager.startSessionForPackage(packageName, durationMinutes)
+        showBanner("تم بدء جلسة استخدام $durationMinutes دقيقة لتطبيقك ⏱️")
+    }
+
+    fun startAppCooldown(packageName: String, cooldownMinutes: Int) {
+        ProtectionManager.startCooldownForPackage(packageName, cooldownMinutes)
+    }
+
+    private fun isSuperProtectionWindowOpen(windowTime24: String, nowMillis: Long): Boolean {
+        val parts = windowTime24.trim().split(":")
+        val h = parts.getOrNull(0)?.toIntOrNull() ?: 13
+        val m = parts.getOrNull(1)?.toIntOrNull() ?: 0
+        val cal = Calendar.getInstance(TimeZone.getTimeZone("GMT+03:00")).apply {
+            timeInMillis = nowMillis
+        }
+        val currentMins = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
+        val windowStartMins = (h.coerceIn(0, 23) * 60) + m.coerceIn(0, 59)
+        val windowEndMins = (windowStartMins + 10) % 1440
+        return if (windowStartMins + 10 <= 1440) {
+            currentMins in windowStartMins..(windowStartMins + 10)
+        } else {
+            currentMins >= windowStartMins || currentMins <= windowEndMins
+        }
+    }
+
+    private fun minutesUntilWindowOpens(windowTime24: String, nowMillis: Long): Int {
+        val parts = windowTime24.trim().split(":")
+        val h = parts.getOrNull(0)?.toIntOrNull() ?: 13
+        val m = parts.getOrNull(1)?.toIntOrNull() ?: 0
+        val cal = Calendar.getInstance(TimeZone.getTimeZone("GMT+03:00")).apply {
+            timeInMillis = nowMillis
+        }
+        val currentMins = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
+        val windowStartMins = (h.coerceIn(0, 23) * 60) + m.coerceIn(0, 59)
+        return if (windowStartMins >= currentMins) {
+            windowStartMins - currentMins
+        } else {
+            (1440 - currentMins) + windowStartMins
+        }
+    }
+
+    private fun formatWindowTimeRangeArabic(windowTime24: String): String {
+        val parts = windowTime24.trim().split(":")
+        val h = parts.getOrNull(0)?.toIntOrNull() ?: 13
+        val m = parts.getOrNull(1)?.toIntOrNull() ?: 0
+        val endMinsTotal = (h * 60 + m + 10) % 1440
+        val endH = endMinsTotal / 60
+        val endM = endMinsTotal % 60
+        val startFormatted = formatTime12Arabic(h, m)
+        val endFormatted = formatTime12Arabic(endH, endM)
+        return "من $startFormatted إلى $endFormatted"
+    }
+
+    private fun formatTime12Arabic(hour24: Int, min: Int): String {
+        val period = if (hour24 < 12) "ص" else "م"
+        val h12 = when (hour24) {
+            0 -> 12
+            in 1..12 -> hour24
+            else -> hour24 - 12
+        }
+        val minStr = if (min < 10) "0$min" else "$min"
+        return UmmAlQuraCalculator.toArabicDigits("$h12:$minStr $period")
+    }
+
+    private fun isAppSpecificScheduleActive(
+        startTime24: String,
+        endTime24: String,
+        daysCsv: String,
+        nowMillis: Long
+    ): Boolean {
+        if (startTime24.isBlank() || endTime24.isBlank()) return false
+        val cal = Calendar.getInstance(TimeZone.getTimeZone("GMT+03:00")).apply {
+            timeInMillis = nowMillis
+        }
+        val androidDay = cal.get(Calendar.DAY_OF_WEEK)
+        val ourDay = when (androidDay) {
+            Calendar.SATURDAY -> 1
+            Calendar.SUNDAY -> 2
+            Calendar.MONDAY -> 3
+            Calendar.TUESDAY -> 4
+            Calendar.WEDNESDAY -> 5
+            Calendar.THURSDAY -> 6
+            Calendar.FRIDAY -> 7
+            else -> 1
+        }
+        val allowedDays = daysCsv.split(",").mapNotNull { it.trim().toIntOrNull() }
+        if (allowedDays.isNotEmpty() && ourDay !in allowedDays) return false
+
+        val currentMins = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
+        val startParts = startTime24.split(":")
+        val startMins = (startParts.getOrNull(0)?.toIntOrNull() ?: 0) * 60 + (startParts.getOrNull(1)?.toIntOrNull() ?: 0)
+        val endParts = endTime24.split(":")
+        val endMins = (endParts.getOrNull(0)?.toIntOrNull() ?: 0) * 60 + (endParts.getOrNull(1)?.toIntOrNull() ?: 0)
+
+        return if (startMins <= endMins) {
+            currentMins in startMins..endMins
+        } else {
+            currentMins >= startMins || currentMins <= endMins
+        }
+    }
+
     fun addOrUpdateBlockedApp(
         appName: String,
         packageName: String,
@@ -1958,14 +2286,17 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
         val sixth: F
     )
 
-    private data class Oct<A, B, C, D, E, F, G, H>(
-        val first: A,
-        val second: B,
-        val third: C,
-        val fourth: D,
-        val fifth: E,
-        val sixth: F,
-        val seventh: G,
-        val eighth: H
+    private data class LocalUiBundle(
+        val nowMillis: Long,
+        val selectedTaskCategory: String,
+        val statusBanner: String?,
+        val backupPreview: String?,
+        val isStandbyVisible: Boolean,
+        val selectedCategoryId: String,
+        val googleCalendarEvents: List<com.example.core.google.GoogleCalendarEvent>,
+        val gmailMessages: List<com.example.core.google.GmailEmailItem>,
+        val appEvents: List<AppEventEntity>,
+        val deviceCalendarEvents: List<CalendarEventItem>,
+        val isDeviceCalendarSyncing: Boolean
     )
 }

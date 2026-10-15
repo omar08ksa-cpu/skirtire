@@ -58,6 +58,7 @@ import com.example.features.protection.ProtectionScreen
 import com.example.features.study.StudyScreen
 import com.example.features.tasks.TasksScreen
 import com.example.features.prayer.PrayerSettingsAndAlarmsScreen
+import com.example.features.prayer.PrayerCalendarScreen
 import com.example.features.prayer.KhatmahPlannerDialog
 import com.example.features.system.SystemAndRoadmapScreen
 import androidx.compose.ui.window.Dialog
@@ -107,6 +108,7 @@ class MainActivity : ComponentActivity() {
             ) {
                 val context = LocalContext.current
                 var isAiAssistantVisible by rememberSaveable { mutableStateOf(false) }
+                var isCalendarScreenOpen by rememberSaveable { mutableStateOf(false) }
 
                 // مراقبة توصيل الشاحن لتشغيل وضع الستاند باي تلقائياً عند التفعيل
                 DisposableEffect(context, uiState.standbyOnCharging) {
@@ -164,6 +166,15 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
+                    isCalendarScreenOpen -> {
+                        PrayerCalendarScreen(
+                            currentCity = uiState.selectedCity,
+                            onBack = { isCalendarScreenOpen = false },
+                            viewModel = mainViewModel,
+                            uiState = uiState
+                        )
+                    }
+
                     uiState.isStandbyVisible -> {
                         StandbyOverlay(
                             uiState = uiState,
@@ -201,7 +212,8 @@ class MainActivity : ComponentActivity() {
                         DailyManagerMainScaffold(
                             uiState = uiState,
                             viewModel = mainViewModel,
-                            onOpenAiAssistant = { isAiAssistantVisible = true }
+                            onOpenAiAssistant = { isAiAssistantVisible = true },
+                            onOpenCalendar = { isCalendarScreenOpen = true }
                         )
                     }
                 }
@@ -295,7 +307,8 @@ class MainActivity : ComponentActivity() {
 fun DailyManagerMainScaffold(
     uiState: DailyManagerUiState,
     viewModel: DailyManagerViewModel,
-    onOpenAiAssistant: () -> Unit = {}
+    onOpenAiAssistant: () -> Unit = {},
+    onOpenCalendar: () -> Unit = {}
 ) {
     var selectedDestination by rememberSaveable { mutableStateOf(MainDestination.TODAY) }
     var isFullScreenSubScreen by rememberSaveable { mutableStateOf(false) }
@@ -347,7 +360,7 @@ fun DailyManagerMainScaffold(
                         onClick = onOpenAiAssistant,
                         modifier = Modifier.testTag("open_ai_assistant_top_btn"),
                         shape = RoundedCornerShape(14.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                         colors = ButtonDefaults.filledTonalButtonColors(
                             containerColor = MaterialTheme.colorScheme.tertiaryContainer,
                             contentColor = MaterialTheme.colorScheme.onTertiaryContainer
@@ -363,6 +376,15 @@ fun DailyManagerMainScaffold(
                             text = "AI",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold
+                        )
+                    }
+                    IconButton(
+                        onClick = onOpenCalendar,
+                        modifier = Modifier.testTag("open_calendar_top_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.CalendarMonth,
+                            contentDescription = "التقويم والأحداث"
                         )
                     }
                     IconButton(
@@ -530,7 +552,8 @@ fun DailyManagerMainScaffold(
                             },
                             onAddEmailTask = { emailItem ->
                                 viewModel.addEmailTaskDirectly(emailItem)
-                            }
+                            },
+                            onOpenCalendar = onOpenCalendar
                         )
 
                         MainDestination.RELIGIOUS -> PrayerScreen(

@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,6 +29,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -71,6 +73,7 @@ fun HabitsScreen(
     var editingValueHabit by remember { mutableStateOf<HabitEntity?>(null) }
     var selectedHabitForDetail by remember { mutableStateOf<HabitEntity?>(null) }
     var showCategoryManagerDialog by remember { mutableStateOf(false) }
+    var showQuranWirdManualBlockDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.refreshAppUsageOverview()
@@ -109,6 +112,9 @@ fun HabitsScreen(
     val filteredHabits = remember(uiState.habits, uiState.selectedCategoryId) {
         if (uiState.selectedCategoryId.isBlank()) uiState.habits
         else uiState.habits.filter { it.categoryId == uiState.selectedCategoryId }
+    }
+    val hasQuranWirdHabit = remember(uiState.habits) {
+        uiState.habits.any { it.autoSource in setOf("QURAN_WIRD", "WIRD") }
     }
 
     Scaffold(
@@ -218,6 +224,15 @@ fun HabitsScreen(
             }
 
             if (selectedSection == 0) {
+                if (!hasQuranWirdHabit && uiState.selectedCategoryId.isBlank()) {
+                    item {
+                        QuranWirdHabitPromoCard(
+                            onAddWirdHabit = { viewModel.toggleQuranWirdHabit(true) },
+                            onNavigateToQuran = onNavigateToReligious
+                        )
+                    }
+                }
+
                 if (filteredHabits.isEmpty()) {
                     item {
                         Card(
@@ -274,7 +289,11 @@ fun HabitsScreen(
                                 selectedHabitForDetail = habit
                             },
                             onSetCheckbox = { checked ->
-                                viewModel.setCheckboxHabitState(habit, checked)
+                                if (habit.autoSource in setOf("QURAN_WIRD", "WIRD")) {
+                                    showQuranWirdManualBlockDialog = true
+                                } else {
+                                    viewModel.setCheckboxHabitState(habit, checked)
+                                }
                             },
                             onIncrementValue = {
                                 viewModel.incrementValueHabit(habit, 1)
@@ -295,7 +314,10 @@ fun HabitsScreen(
                             onDelete = {
                                 viewModel.deleteHabit(habit.id)
                             },
-                            onNavigateToReligious = onNavigateToReligious
+                            onNavigateToReligious = onNavigateToReligious,
+                            onShowWirdBlockNotice = {
+                                showQuranWirdManualBlockDialog = true
+                            }
                         )
                     }
                 }
@@ -417,6 +439,71 @@ fun HabitsScreen(
             onAddCategory = { name, color, icon -> viewModel.addCategory(name, color, icon) },
             onUpdateCategory = { id, name, color, icon -> viewModel.updateCategory(id, name, color, icon) },
             onDeleteCategory = { id -> viewModel.deleteCategory(id) }
+        )
+    }
+
+    if (showQuranWirdManualBlockDialog) {
+        AlertDialog(
+            onDismissRequest = { showQuranWirdManualBlockDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.MenuBook,
+                    contentDescription = null,
+                    tint = EmeraldDeep,
+                    modifier = Modifier.size(36.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "عادة الورد القرآني اليومي 📖",
+                    fontWeight = FontWeight.ExtraBold,
+                    textAlign = TextAlign.Center
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "🚫 التعبئة اليدوية غير مسموحة!",
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Text(
+                        text = "وفقاً للنظام، لا يمكن التأشير اليدوي على عادة الورد القرآني إطلاقاً. تكتمل العادة فقط بشكل آلي عندما تقرأ وردك وتضع «علامة التوقف» عند الآية المطلوب منك إنهاؤها في المصحف الشريف.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = EmeraldDeep.copy(alpha = 0.1f)
+                    ) {
+                        Text(
+                            text = "💡 طريقة الإنجاز: افتح المصحف، واقرأ وردك لليوم، ثم اضغط على الآية التي وقفت عندها واختر «🏁 وضع علامة توقف نهاية ورد اليوم وإنجاز العادة».",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = EmeraldDeep,
+                            modifier = Modifier.padding(10.dp),
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showQuranWirdManualBlockDialog = false
+                        onNavigateToReligious()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldDeep)
+                ) {
+                    Icon(Icons.Default.MenuBook, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("فتح المصحف للورد 📖", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showQuranWirdManualBlockDialog = false }) {
+                    Text("حسناً، فهمت")
+                }
+            }
         )
     }
 
@@ -836,7 +923,8 @@ private fun HabitItemCard(
     onEditPenalty: () -> Unit,
     onEditAlarm: () -> Unit,
     onDelete: () -> Unit,
-    onNavigateToReligious: () -> Unit = {}
+    onNavigateToReligious: () -> Unit = {},
+    onShowWirdBlockNotice: () -> Unit = {}
 ) {
     val completedCount = todayLog?.completedCount ?: 0
     val targetCount = habit.targetCount.coerceAtLeast(1)
@@ -844,8 +932,9 @@ private fun HabitItemCard(
     val progress = (completedCount.toFloat() / targetCount.toFloat()).coerceIn(0f, 1f)
     val extraBeyondTarget = (completedCount - targetCount).coerceAtLeast(0)
 
+    val isQuranWirdHabit = habit.autoSource in setOf("QURAN_WIRD", "WIRD")
     val isAzkarHabit = habit.autoSource in setOf("AZKAR_MORNING", "AZKAR_EVENING", "AZKAR")
-    val isCheckbox = habit.autoSource == "CHECKBOX" && !isAzkarHabit
+    val isCheckbox = habit.autoSource == "CHECKBOX" && !isAzkarHabit && !isQuranWirdHabit
     val isValueHabit = habit.autoSource == "TARGET_VALUE"
     val isChecklist = habit.autoSource == "CHECKLIST"
     val isTimerHabit = habit.autoSource == "STUDY_TIMER" || habit.autoSource == "STUDY_MINUTES"
@@ -859,6 +948,7 @@ private fun HabitItemCard(
     }
 
     val typeBadge = when {
+        isQuranWirdHabit -> "ورد القرآن 📖"
         habit.autoSource == "AZKAR_MORNING" -> "أذكار الصباح ☀️"
         habit.autoSource == "AZKAR_EVENING" -> "أذكار المساء 🌙"
         habit.autoSource == "AZKAR" -> "أذكار دينية 🕌"
@@ -1033,6 +1123,54 @@ private fun HabitItemCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 when {
+                    isQuranWirdHabit -> {
+                        if (isDoneToday) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = EmeraldDeep.copy(alpha = 0.15f),
+                                modifier = Modifier.clickable { onShowWirdBlockNotice() }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldDeep, modifier = Modifier.size(16.dp))
+                                    Text("تم إتمام الورد ووضع علامة التوقف ✓", color = EmeraldDeep, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                            }
+                        } else {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                FilledTonalButton(
+                                    onClick = onNavigateToReligious,
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                    colors = ButtonDefaults.filledTonalButtonColors(
+                                        containerColor = EmeraldDeep.copy(alpha = 0.15f),
+                                        contentColor = EmeraldDeep
+                                    )
+                                ) {
+                                    Icon(Icons.Default.MenuBook, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("قراءة الورد بالمصحف 📖", fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
+                                }
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    modifier = Modifier.clickable { onShowWirdBlockNotice() }
+                                ) {
+                                    Text(
+                                        text = "🔒 يكتمل بعلامة التوقف",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
                     isAzkarHabit -> {
                         if (isDoneToday) {
                             Surface(
@@ -1404,9 +1542,49 @@ private fun OrganizedAddHabitDialog(
                         leadingIcon = { Icon(Icons.Default.MonitorHeart, contentDescription = null, modifier = Modifier.size(16.dp)) },
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    FilterChip(
+                        selected = selectedCategory == "QURAN_WIRD",
+                        onClick = {
+                            selectedCategory = "QURAN_WIRD"
+                            if (title.isBlank() || title.startsWith("هدف") || title == "عادة جديدة") {
+                                title = "الورد القرآني اليومي"
+                            }
+                        },
+                        label = { Text("الورد القرآني (تتبع تلقائي بالمصحف 📖)", fontWeight = FontWeight.Bold) },
+                        leadingIcon = { Icon(Icons.Default.MenuBook, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
 
                 when (selectedCategory) {
+                    "QURAN_WIRD" -> {
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = EmeraldDeep.copy(alpha = 0.12f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, EmeraldDeep.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(Icons.Default.MenuBook, contentDescription = null, tint = EmeraldDeep)
+                                    Text("تتبع تلقائي وإنجاز إلزامي بالمصحف", fontWeight = FontWeight.Bold, color = EmeraldDeep)
+                                }
+                                Text(
+                                    text = "وفقاً للنظام، لا يمكن التأشير اليدوي على هذه العادة في قائمة العادات. تكتمل فقط عندما تقرأ الورد وتضع علامة التوقف عند الآية المطلوب إنهاؤها بالمصحف 🏁.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+
                     "TARGET_VALUE" -> {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1964,6 +2142,7 @@ private fun OrganizedAddHabitDialog(
                     if (title.isNotBlank()) {
                         val finalSource = when (selectedCategory) {
                             "CHECKBOX" -> "CHECKBOX"
+                            "QURAN_WIRD" -> "QURAN_WIRD"
                             "TARGET_VALUE" -> "TARGET_VALUE"
                             "CHECKLIST" -> "CHECKLIST"
                             "STUDY_TIMER" -> "STUDY_TIMER"
@@ -1973,13 +2152,14 @@ private fun OrganizedAddHabitDialog(
                         val breakMin = (pomodoroBreakText.toIntOrNull() ?: 5).coerceAtLeast(1)
                         val rounds = (pomodoroRoundsText.toIntOrNull() ?: 2).coerceAtLeast(1)
                         val finalTarget = when {
-                            selectedCategory == "CHECKBOX" -> 1
+                            selectedCategory == "CHECKBOX" || selectedCategory == "QURAN_WIRD" -> 1
                             selectedCategory == "CHECKLIST" -> (checklistRequiredText.toIntOrNull() ?: 1).coerceAtLeast(1)
                             selectedCategory == "STUDY_TIMER" && timerType == "POMODORO" -> focusMin * rounds
                             else -> (targetText.toIntOrNull() ?: 1).coerceAtLeast(1)
                         }
                         val finalUnit = when (selectedCategory) {
                             "CHECKBOX" -> "إنجاز"
+                            "QURAN_WIRD" -> "ورد"
                             "CHECKLIST" -> "عنصر"
                             "STUDY_TIMER" -> "دقيقة"
                             "HEALTH" -> selectedHealthMetric.unitLabel
@@ -2480,3 +2660,95 @@ private fun HabitPenaltyConfigDialog(
         }
     )
 }
+
+@Composable
+private fun QuranWirdHabitPromoCard(
+    onAddWirdHabit: () -> Unit,
+    onNavigateToQuran: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("quran_wird_promo_card"),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = EmeraldDeep.copy(alpha = 0.1f)
+        ),
+        border = BorderStroke(1.5.dp, EmeraldDeep.copy(alpha = 0.35f))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(EmeraldDeep),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MenuBook,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "📖 تفعيل عادة الورد القرآني اليومي",
+                        fontWeight = FontWeight.ExtraBold,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = EmeraldDeep
+                    )
+                    Text(
+                        text = "تتبع ختمتك ووردك اليومي كعادة في قائمتك",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Text(
+                text = "اربط وردك القرآني بقائمة العادات اليومية تلقائياً. تظهر العادة كباقي العادات، ولكن التعبئة اليدوية ممنوعة تماماً؛ تكتمل العادة فقط بشكل آلي عند قراءة الورد في المصحف ووضع علامة التوقف عند الآية المطلوبة منك إنهاؤها.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(
+                    onClick = onNavigateToQuran,
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text("المصحف 📖", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Button(
+                    onClick = onAddWirdHabit,
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldDeep),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                    modifier = Modifier.testTag("activate_quran_wird_habit_btn")
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("إضافة عادة الورد", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+

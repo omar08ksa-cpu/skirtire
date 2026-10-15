@@ -66,6 +66,33 @@ object ProtectionManager {
     private val _state = MutableStateFlow(ProtectionRuntimeState())
     val state: StateFlow<ProtectionRuntimeState> = _state.asStateFlow()
 
+    private val activeSessions = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val cooldownUntil = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    fun startSessionForPackage(packageName: String, durationMinutes: Int) {
+        val now = System.currentTimeMillis()
+        activeSessions[packageName] = now + (durationMinutes * 60_000L)
+    }
+
+    fun isSessionActiveForPackage(packageName: String): Boolean {
+        val end = activeSessions[packageName] ?: return false
+        return System.currentTimeMillis() < end
+    }
+
+    fun startCooldownForPackage(packageName: String, cooldownMinutes: Int) {
+        val now = System.currentTimeMillis()
+        activeSessions.remove(packageName)
+        cooldownUntil[packageName] = now + (cooldownMinutes * 60_000L)
+    }
+
+    fun getCooldownEndTime(packageName: String): Long? {
+        val end = cooldownUntil[packageName] ?: return null
+        return if (System.currentTimeMillis() < end) end else {
+            cooldownUntil.remove(packageName)
+            null
+        }
+    }
+
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
     private var volumeEnforcerRunnable: Runnable? = null
 

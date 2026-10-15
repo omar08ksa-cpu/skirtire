@@ -465,18 +465,85 @@ class DailyManagerRepository(
         colorHex: String = "#059669",
         tag: String = "ورد اليوم"
     ): QuranBookmarkEntity {
+        val safePage = pageNumber.coerceIn(1, 604)
+        val safeAyah = ayahNumber.coerceAtLeast(1)
+        val now = System.currentTimeMillis()
         val bookmark = QuranBookmarkEntity(
-            pageNumber = pageNumber.coerceIn(1, 604),
+            pageNumber = safePage,
             surahName = surahName,
-            ayahNumber = ayahNumber.coerceAtLeast(1),
+            ayahNumber = safeAyah,
             title = title.ifBlank { "علامة توقف" },
             note = note.trim(),
             colorHex = colorHex,
             tag = tag,
-            createdAt = System.currentTimeMillis()
+            createdAt = now
         )
         fullDayDao.insertQuranBookmark(bookmark)
+
+        if (tag == "ورد اليوم") {
+            completeTodayWirdWithStopMark(safePage, surahName, safeAyah)
+        }
+
         return bookmark
+    }
+
+    suspend fun completeTodayWirdWithStopMark(
+        pageNumber: Int,
+        surahName: String,
+        ayahNumber: Int
+    ): WirdProgressEntity {
+        val now = System.currentTimeMillis()
+        val todayKey = UmmAlQuraCalculator.todayDateKey(now)
+        val current = fullDayDao.getWirdProgressOnce() ?: WirdProgressEntity()
+        val safePage = pageNumber.coerceIn(1, 604)
+        val safeAyah = ayahNumber.coerceAtLeast(1)
+        val nextJuz = IcsCalendarParser.calculateJuzForMadinahPage(safePage)
+        val pagesRead = (safePage - current.currentPage + 1).coerceAtLeast(current.dailyTargetPages)
+        val todayPages = if (current.lastReadDateKey == todayKey) {
+            current.todayPagesRead + pagesRead
+        } else {
+            pagesRead
+        }
+
+        val updated = current.copy(
+            currentPage = safePage,
+            currentJuz = nextJuz,
+            bookmarkSurahName = surahName.ifBlank { current.bookmarkSurahName },
+            bookmarkAyahNumber = safeAyah,
+            bookmarkNote = "توقف الورد عند الآية $safeAyah من سورة $surahName (ص $safePage)",
+            lastReadDateKey = todayKey,
+            todayPagesRead = todayPages,
+            updatedAt = now
+        )
+        fullDayDao.upsertWirdProgress(updated)
+
+        // إتمام كافة عادات الورد القرآني تلقائياً
+        val wirdHabits = (habitDao.findHabitsByAutoSource("WIRD") + habitDao.findHabitsByAutoSource("QURAN_WIRD")).distinctBy { it.id }
+        for (wirdHabit in wirdHabits) {
+            val logId = "${wirdHabit.id}_$todayKey"
+            val existingLog = habitDao.getHabitLogById(logId)
+            val wasDone = existingLog?.isCompleted == true
+
+            habitDao.upsertHabitLog(
+                HabitLogEntity(
+                    id = logId,
+                    habitId = wirdHabit.id,
+                    dateKey = todayKey,
+                    completedCount = wirdHabit.targetCount,
+                    targetCount = wirdHabit.targetCount,
+                    isCompleted = true,
+                    status = "COMPLETED",
+                    completionPercent = 100,
+                    sourceNote = "علامة توقف الورد عند الآية $safeAyah من سورة $surahName (ص $safePage)",
+                    createdAt = existingLog?.createdAt ?: now,
+                    updatedAt = now
+                )
+            )
+            if (!wasDone) {
+                rewardHabitCompletion(wirdHabit, now)
+            }
+        }
+        return updated
     }
 
     suspend fun deleteQuranBookmark(id: String) {
@@ -1156,6 +1223,74 @@ class DailyManagerRepository(
         return schedule
     }
 
+    suspend fun updateAppCustomDetails(
+        packageName: String,
+        appName: String,
+        category: String,
+        usageImpact: String,
+        dailyLimitMinutes: Int,
+        dailyLaunchLimit: Int,
+        specificStartTime24: String,
+        specificEndTime24: String,
+        specificDays: String,
+        specificEnabled: Boolean
+    ) {
+        val now = System.currentTimeMillis()
+        val existing = protectionDao.getBlockedAppsOnce().find { it.packageName == packageName }
+        val updated = (existing ?: BlockedAppEntity(
+            packageName = packageName,
+            appName = appName,
+            createdAt = now
+        )).copy(
+            appName = appName.ifBlank { existing?.appName ?: packageName },
+            category = category,
+            usageImpact = usageImpact,
+            dailyLimitMinutes = dailyLimitMinutes.coerceAtLeast(0),
+            dailyLaunchLimit = dailyLaunchLimit.coerceAtLeast(0),
+            specificBlockStartTime24 = specificStartTime24,
+            specificBlockEndTime24 = specificEndTime24,
+            specificBlockDays = specificDays,
+            specificBlockEnabled = specificEnabled,
+            updatedAt = now
+        )
+        protectionDao.upsertBlockedApp(updated)
+    }
+
+    suspend fun saveRichBlockSchedule(
+        id: String? = null,
+        title: String,
+        scheduleType: String,
+        startTime24: String = "04:30",
+        endTime24: String = "05:00",
+        daysOfWeek: String = "1,2,3,4,5,6,7",
+        blockedPackagesCsv: String = "",
+        targetCategory: String = "",
+        groupLimitMinutes: Int = 0,
+        sessionDurationMinutes: Int = 15,
+        sessionCooldownMinutes: Int = 30,
+        isEnabled: Boolean = true
+    ): BlockScheduleEntity {
+        val now = System.currentTimeMillis()
+        val schedule = BlockScheduleEntity(
+            id = id ?: UUID.randomUUID().toString(),
+            title = title.trim().ifBlank { "جدول حظر" },
+            scheduleType = scheduleType,
+            startTime24 = startTime24.trim(),
+            endTime24 = endTime24.trim(),
+            daysOfWeek = daysOfWeek,
+            blockedPackagesCsv = blockedPackagesCsv.trim(),
+            targetCategory = targetCategory.trim(),
+            groupLimitMinutes = groupLimitMinutes,
+            sessionDurationMinutes = sessionDurationMinutes,
+            sessionCooldownMinutes = sessionCooldownMinutes,
+            isEnabled = isEnabled,
+            createdAt = now,
+            updatedAt = now
+        )
+        protectionDao.upsertBlockSchedule(schedule)
+        return schedule
+    }
+
     suspend fun deleteBlockSchedule(id: String) {
         protectionDao.softDeleteBlockSchedule(id)
     }
@@ -1354,6 +1489,10 @@ class DailyManagerRepository(
     ) {
         val now = System.currentTimeMillis()
         val habit = habitDao.findHabitById(habitId) ?: return
+        if (habit.autoSource in setOf("QURAN_WIRD", "WIRD")) {
+            // عادة الورد القرآني تكتمل حصرياً عبر وضع علامة التوقف بالمصحف الشريف - ممنوع التعبئة اليدوية
+            return
+        }
         val logId = "${habit.id}_$dateKey"
         val existing = habitDao.getHabitLogById(logId)
         val wasCompleted = existing?.isCompleted == true

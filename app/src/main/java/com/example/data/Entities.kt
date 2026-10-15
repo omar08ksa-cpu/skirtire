@@ -206,11 +206,17 @@ data class BlockedAppEntity(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
     val packageName: String,
     val appName: String,
-    val category: String = "تطبيق",
+    val category: String = "OTHER", // "SOCIAL", "ENTERTAINMENT", "PRODUCTIVITY", "TOOLS", "OTHER"
     val blockInStudyMode: Boolean = true,
     val blockInSleepMode: Boolean = true,
     val isAlwaysBlocked: Boolean = false,
     val dailyLimitMinutes: Int = 0, // 0 = بدون حد زمني (حظر حسب الجدول)، >0 = حد استخدام يومي بالدقائق مثل StayFree
+    val dailyLaunchLimit: Int = 0, // 0 = بدون حد لمرات الفتح، >0 = أقصى عدد لمرات فتح التطبيق اليوم
+    val usageImpact: String = "NEUTRAL", // "POSITIVE", "NEGATIVE", "NEUTRAL", "IGNORED" (عدم شمل التطبيق في مدة الاستخدام)
+    val specificBlockStartTime24: String = "", // جدول حظر خاص بالتطبيق
+    val specificBlockEndTime24: String = "",
+    val specificBlockDays: String = "1,2,3,4,5,6,7",
+    val specificBlockEnabled: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
     val deletedAt: Long? = null
@@ -220,10 +226,14 @@ data class BlockedAppEntity(
 data class BlockScheduleEntity(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
     val title: String,
-    val scheduleType: String, // "WAKE_ALARM", "SLEEP_MODE", "STUDY_BLOCK", "CUSTOM_BLOCK"
+    val scheduleType: String, // "WAKE_ALARM", "SLEEP_MODE", "STUDY_BLOCK", "CUSTOM_BLOCK", "GROUP_USAGE_LIMIT", "PERMANENT", "SESSION_LIMIT", "FOCUS_TIMER"
     val startTime24: String = "04:30",
     val endTime24: String = "05:00",
     val blockedPackagesCsv: String = "", // حزم التطبيقات المشمولة في هذه الجدولة
+    val targetCategory: String = "", // في حال تم اختيار فئة كاملة (مثل SOCIAL أو ENTERTAINMENT)
+    val groupLimitMinutes: Int = 0, // حد الاستخدام الجماعي المشترك لنوع GROUP_USAGE_LIMIT
+    val sessionDurationMinutes: Int = 15, // مدة جلسة الاستخدام بالدقائق لنوع SESSION_LIMIT
+    val sessionCooldownMinutes: Int = 30, // فترة الإغلاق بعد انتهاء الجلسة لنوع SESSION_LIMIT
     val verificationMethod: String = "LOCAL_IMAGE", // "LOCAL_IMAGE" أو "QR"
     val qrReferenceCode: String = "WAKE-QR-2026",
     val placeName: String = "المكان المحدد",

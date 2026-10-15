@@ -15,6 +15,23 @@ import java.util.Calendar
 import java.util.TimeZone
 import java.util.concurrent.ConcurrentHashMap
 
+data class DayUsageItem(
+    val dayNameArabic: String,
+    val dateKey: String,
+    val dayOfMonth: Int,
+    val totalMinutes: Int,
+    val formattedDuration: String,
+    val isToday: Boolean
+)
+
+data class WeeklyUsageData(
+    val weekOffset: Int = 0,
+    val weekRangeLabel: String = "",
+    val days: List<DayUsageItem> = emptyList(),
+    val totalWeekMinutes: Int = 0,
+    val averageDailyMinutes: Int = 0
+)
+
 data class AppUsageStatItem(
     val packageName: String,
     val appName: String,
@@ -22,6 +39,7 @@ data class AppUsageStatItem(
     val usedSecondsToday: Int = usedMinutesToday * 60,
     val usedTimeMillisToday: Long = usedSecondsToday * 1000L,
     val formattedDuration: String = AppUsageMonitor.formatDurationArabic(usedSecondsToday * 1000L),
+    val launchCountToday: Int = 0,
     val isSystemApp: Boolean = false
 ) {
     fun formattedUsageArabic(): String = formattedDuration
@@ -35,8 +53,11 @@ data class DeviceUsageOverview(
     val usageByPackageMinutes: Map<String, Int> = emptyMap(),
     val usageByPackageSeconds: Map<String, Int> = emptyMap(),
     val usageByPackageMillis: Map<String, Long> = usageByPackageSeconds.mapValues { it.value * 1000L },
+    val launchesByPackageToday: Map<String, Int> = emptyMap(),
     val topUsedApps: List<AppUsageStatItem> = emptyList(),
-    val installedUserApps: List<AppUsageStatItem> = emptyList()
+    val installedUserApps: List<AppUsageStatItem> = emptyList(),
+    val negativeScreenMinutesToday: Int = 0,
+    val positiveScreenMinutesToday: Int = 0
 )
 
 object AppUsageMonitor {
@@ -155,6 +176,7 @@ object AppUsageMonitor {
         val startOfDay = cal.timeInMillis
 
         val usageSecondsMap = mutableMapOf<String, Int>()
+        val launchesMap = mutableMapOf<String, Int>()
 
         // 1. دمج التتبع اللحظي المباشر
         for ((pkg, millis) in liveAccumulatedMillis) {
@@ -187,6 +209,7 @@ object AppUsageMonitor {
                         when (event.eventType) {
                             UsageEvents.Event.ACTIVITY_RESUMED -> {
                                 activeResumeByPkg[pkg] = event.timeStamp
+                                launchesMap[pkg] = (launchesMap[pkg] ?: 0) + 1
                             }
                             UsageEvents.Event.ACTIVITY_PAUSED,
                             UsageEvents.Event.ACTIVITY_STOPPED -> {
@@ -315,11 +338,13 @@ object AppUsageMonitor {
         val installedList = labelByPkg.map { (pkg, pair) ->
             val secs = usageSecondsMap[pkg] ?: 0
             val mins = usageMinutesMap[pkg] ?: 0
+            val launches = launchesMap[pkg] ?: 0
             AppUsageStatItem(
                 packageName = pkg,
                 appName = pair.first,
                 usedMinutesToday = mins,
                 usedSecondsToday = secs,
+                launchCountToday = launches,
                 isSystemApp = pair.second
             )
         }.sortedWith(
@@ -339,8 +364,110 @@ object AppUsageMonitor {
             totalScreenSecondsToday = totalSeconds,
             usageByPackageMinutes = usageMinutesMap,
             usageByPackageSeconds = usageSecondsMap,
+            launchesByPackageToday = launchesMap,
             topUsedApps = topUsed,
             installedUserApps = installedList
+        )
+    }
+
+    /**
+     * استعلام إحصائيات الاستخدام الأسبوعية (رسم بياني) سواء للهاتف كاملاً أو لتطبيق محدد
+     * مع دعم التراجع في الأسابيع السابقة (weekOffset: 0 = هذا الأسبوع، -1 = الأسبوع الماضي، ...)
+     */
+    fun queryWeeklyUsage(
+        context: Context,
+        targetPackage: String? = null,
+        weekOffset: Int = 0
+    ): WeeklyUsageData {
+        val now = System.currentTimeMillis()
+        val hasPerm = hasUsageStatsPermission(context)
+        val usm = if (hasPerm) context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager else null
+
+        // بداية الأسبوع (السبت) حسب إزاحة الأسبوع
+        val cal = Calendar.getInstance(TimeZone.getTimeZone("GMT+03:00")).apply {
+            timeInMillis = now
+            add(Calendar.WEEK_OF_YEAR, weekOffset)
+            firstDayOfWeek = Calendar.SATURDAY
+            set(Calendar.DAY_OF_WEEK, Calendar.SATURDAY)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+
+        val dayNames = listOf("السبت", "الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة")
+        val daysList = mutableListOf<DayUsageItem>()
+
+        for (i in 0..6) {
+            val dayStart = cal.timeInMillis
+            val dayEnd = dayStart + 24 * 3600_000L - 1000L
+            val dayName = dayNames[i]
+            val dayOfMonth = cal.get(Calendar.DAY_OF_MONTH)
+            val dateKey = UmmAlQuraCalculator.todayDateKey(dayStart)
+            val isToday = (dayStart <= now && now <= dayEnd)
+
+            var dayMinutes = 0
+            if (usm != null && dayStart <= now) {
+                try {
+                    val endQuery = minOf(now, dayEnd)
+                    val stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, dayStart, endQuery).orEmpty()
+                    if (targetPackage != null) {
+                        val stat = stats.find { it.packageName == targetPackage }
+                        dayMinutes = ((stat?.totalTimeInForeground ?: 0L) / 60_000L).toInt()
+                        if (isToday) {
+                            val liveSecs = readTodayUsageOverview(context).usageByPackageSeconds[targetPackage] ?: 0
+                            dayMinutes = maxOf(dayMinutes, (liveSecs + 59) / 60)
+                        }
+                    } else {
+                        val validStats = stats.filter {
+                            it.packageName != context.packageName &&
+                                it.packageName !in ProtectionManager.permanentExemptPackages &&
+                                !it.packageName.startsWith("com.android.systemui") &&
+                                !it.packageName.contains("launcher", ignoreCase = true)
+                        }
+                        dayMinutes = (validStats.sumOf { it.totalTimeInForeground } / 60_000L).toInt()
+                        if (isToday) {
+                            dayMinutes = maxOf(dayMinutes, readTodayUsageOverview(context).totalScreenMinutesToday)
+                        }
+                    }
+                } catch (_: Exception) {
+                }
+            }
+
+            daysList.add(
+                DayUsageItem(
+                    dayNameArabic = dayName,
+                    dateKey = dateKey,
+                    dayOfMonth = dayOfMonth,
+                    totalMinutes = dayMinutes,
+                    formattedDuration = formatDurationArabic(dayMinutes * 60_000L),
+                    isToday = isToday
+                )
+            )
+
+            cal.add(Calendar.DAY_OF_MONTH, 1)
+        }
+
+        val firstDay = daysList.first()
+        val lastDay = daysList.last()
+        val rangeLabel = "${firstDay.dayOfMonth} إلى ${lastDay.dayOfMonth} ${
+            when {
+                weekOffset == 0 -> "(هذا الأسبوع)"
+                weekOffset == -1 -> "(الأسبوع الماضي)"
+                else -> "(قبل ${-weekOffset} أسابيع)"
+            }
+        }"
+
+        val totalMins = daysList.sumOf { it.totalMinutes }
+        val activeDaysCount = daysList.count { it.totalMinutes > 0 }.coerceAtLeast(1)
+        val avgMins = totalMins / activeDaysCount
+
+        return WeeklyUsageData(
+            weekOffset = weekOffset,
+            weekRangeLabel = rangeLabel,
+            days = daysList,
+            totalWeekMinutes = totalMins,
+            averageDailyMinutes = avgMins
         )
     }
 

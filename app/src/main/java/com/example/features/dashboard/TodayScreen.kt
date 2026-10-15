@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.core.health.HealthGoalMetric
@@ -76,6 +77,7 @@ fun TodayScreen(
     onOpenGoogleSettings: () -> Unit = {},
     onRefreshGoogle: () -> Unit = {},
     onAddEmailTask: (GmailEmailItem) -> Unit = {},
+    onOpenCalendar: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -207,6 +209,14 @@ fun TodayScreen(
             }
         }
 
+        // بطاقة التقويم ونظام الأحداث ومواعيد اليوم
+        item {
+            TodayCalendarAndEventsCard(
+                uiState = uiState,
+                onOpenCalendar = onOpenCalendar
+            )
+        }
+
         // بطاقة Google Workspace (Calendar & Gmail)
         item {
             GoogleWorkspaceTodayCard(
@@ -243,7 +253,8 @@ fun TodayScreen(
                     onSetCheckbox = { checked -> onSetCheckboxHabit(habit, checked) },
                     onIncrementValue = { onIncrementValueHabit(habit) },
                     onOpenTimer = { onStartHabitTimer(habit) },
-                    onOpenHabitsTab = { onNavigateToTab(2) }
+                    onOpenHabitsTab = { onNavigateToTab(2) },
+                    onOpenReligiousTab = onOpenReligiousTab
                 )
             }
         }
@@ -482,14 +493,17 @@ private fun TodayHabitRowCard(
     onSetCheckbox: (Boolean) -> Unit,
     onIncrementValue: () -> Unit,
     onOpenTimer: () -> Unit,
-    onOpenHabitsTab: () -> Unit
+    onOpenHabitsTab: () -> Unit,
+    onOpenReligiousTab: () -> Unit = {}
 ) {
     val completedCount = todayLog?.completedCount ?: 0
     val targetCount = habit.targetCount.coerceAtLeast(1)
     val isDone = todayLog?.isCompleted == true
     val progress = (completedCount.toFloat() / targetCount.toFloat()).coerceIn(0f, 1f)
 
-    val isCheckbox = habit.autoSource == "CHECKBOX"
+    val isQuranWirdHabit = habit.autoSource in setOf("QURAN_WIRD", "WIRD")
+    val isAzkarHabit = habit.autoSource in setOf("AZKAR_MORNING", "AZKAR_EVENING", "AZKAR")
+    val isCheckbox = habit.autoSource == "CHECKBOX" && !isAzkarHabit && !isQuranWirdHabit
     val isValueHabit = habit.autoSource == "TARGET_VALUE"
     val isTimerHabit = habit.autoSource == "STUDY_TIMER" || habit.autoSource == "STUDY_MINUTES"
     val isHealthHabit = HealthGoalMetric.isHealthSource(habit.autoSource)
@@ -499,6 +513,7 @@ private fun TodayHabitRowCard(
             .fillMaxWidth()
             .clickable {
                 when {
+                    isQuranWirdHabit || isAzkarHabit -> onOpenReligiousTab()
                     isCheckbox -> onSetCheckbox(!isDone)
                     isTimerHabit -> onOpenTimer()
                     isValueHabit -> onIncrementValue()
@@ -537,6 +552,20 @@ private fun TodayHabitRowCard(
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold
                         )
+                        if (isQuranWirdHabit) {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = EmeraldDeep.copy(alpha = 0.15f)
+                            ) {
+                                Text(
+                                    text = "المصحف 📖",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                    color = EmeraldDeep,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
                         if (habit.penaltyLockApps) {
                             Icon(
                                 imageVector = Icons.Default.Lock,
@@ -555,7 +584,14 @@ private fun TodayHabitRowCard(
                         }
                     }
 
-                    if (!isCheckbox) {
+                    if (isQuranWirdHabit) {
+                        Text(
+                            text = if (isDone) "تم إنجاز الورد بوضع علامة التوقف بالمصحف ✓" else "🔒 يكتمل آلياً عند وضع علامة التوقف بالمصحف",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isDone) EmeraldDeep else MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    } else if (!isCheckbox) {
                         Text(
                             text = UmmAlQuraCalculator.toArabicDigits("$completedCount / $targetCount ${habit.unitLabel}"),
                             style = MaterialTheme.typography.labelSmall,
@@ -565,6 +601,66 @@ private fun TodayHabitRowCard(
                 }
 
                 when {
+                    isQuranWirdHabit -> {
+                        if (isDone) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = EmeraldDeep.copy(alpha = 0.15f)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldDeep, modifier = Modifier.size(14.dp))
+                                    Text("تم ✓", color = EmeraldDeep, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        } else {
+                            FilledTonalButton(
+                                onClick = onOpenReligiousTab,
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = EmeraldDeep.copy(alpha = 0.15f),
+                                    contentColor = EmeraldDeep
+                                )
+                            ) {
+                                Icon(Icons.Default.MenuBook, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("المصحف 📖", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                    isAzkarHabit -> {
+                        if (isDone) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = EmeraldDeep.copy(alpha = 0.15f)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldDeep, modifier = Modifier.size(14.dp))
+                                    Text("تم ✓", color = EmeraldDeep, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        } else {
+                            FilledTonalButton(
+                                onClick = onOpenReligiousTab,
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = EmeraldDeep.copy(alpha = 0.15f),
+                                    contentColor = EmeraldDeep
+                                )
+                            ) {
+                                Icon(Icons.Default.Mosque, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("الأذكار 🕌", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
                     isCheckbox -> {
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             IconButton(
@@ -1016,3 +1112,139 @@ fun GoogleWorkspaceTodayCard(
         }
     }
 }
+
+@Composable
+private fun TodayCalendarAndEventsCard(
+    uiState: DailyManagerUiState,
+    onOpenCalendar: () -> Unit
+) {
+    val todayKey = uiState.prayerSchedule.dateKey
+    val deviceEventsToday = remember(uiState.deviceCalendarEvents, todayKey) {
+        uiState.deviceCalendarEvents.filter { it.dateKey == todayKey }
+    }
+    val appEventsToday = remember(uiState.appEvents, todayKey) {
+        uiState.appEvents.filter { it.dateKey == todayKey }
+    }
+    val totalCount = deviceEventsToday.size + appEventsToday.size
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onOpenCalendar() }
+            .testTag("today_calendar_events_card"),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CalendarMonth,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+                    Column {
+                        Text(
+                            text = "التقويم ومواعيد اليوم 📅",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Text(
+                            text = if (totalCount > 0) "$totalCount مواعيد مجدولة اليوم" else "لا توجد مواعيد مسجلة لليوم",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                FilledTonalButton(
+                    onClick = onOpenCalendar,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("فتح التقويم", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            // عرض عينة من مواعيد اليوم إذا وجدت
+            if (totalCount > 0) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val sampleEvents = (deviceEventsToday.take(2).map {
+                        Triple(it.title, if (it.isAllDay) "طوال اليوم" else it.startTimeFormatted, "سامسونج 📱")
+                    } + appEventsToday.take(2).map {
+                        Triple(it.title, if (it.isAllDay) "طوال اليوم" else it.startTime, "محلي 📌")
+                    }).take(3)
+
+                    sampleEvents.forEach { (title, time, source) ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = MaterialTheme.colorScheme.secondaryContainer
+                                ) {
+                                    Text(
+                                        text = source,
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Text(
+                                    text = title,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            if (time.isNotBlank()) {
+                                Text(
+                                    text = time,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+

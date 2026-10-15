@@ -128,7 +128,9 @@ fun PrayerScreen(
         "CALENDAR" -> {
             PrayerCalendarScreen(
                 currentCity = uiState.selectedCity,
-                onBack = { currentSubScreen = "MAIN" }
+                onBack = { currentSubScreen = "MAIN" },
+                viewModel = viewModel,
+                uiState = uiState
             )
             return
         }

@@ -455,6 +455,10 @@ fun QuranReaderScreen(
                 viewModel.showBanner("تم تحديد الآية ${ayah.ayahNumber} كموضع للورد الحالي 📖")
                 selectedAyahForAction = null
             },
+            onCompleteWirdWithStopMark = {
+                viewModel.completeTodayWirdWithStopMark(currentPageNumber, ayah.surahName, ayah.ayahNumber)
+                selectedAyahForAction = null
+            },
             onAddReflection = { note ->
                 viewModel.addQuranBookmark(
                     pageNumber = currentPageNumber,
@@ -806,6 +810,7 @@ fun AyahActionDialog(
     isBookmarked: Boolean,
     onSetBookmark: (tag: String, colorHex: String, note: String) -> Unit,
     onSetWirdStop: () -> Unit,
+    onCompleteWirdWithStopMark: () -> Unit = {},
     onAddReflection: (note: String) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -880,6 +885,29 @@ fun AyahActionDialog(
                 }
 
                 Text("إجراءات الآية والتوقف:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+
+                // زر إتمام ورد اليوم ووضع علامة التوقف تلقائياً
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                    border = androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onCompleteWirdWithStopMark() }
+                        .testTag("ayah_complete_wird_btn")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(Icons.Default.BookmarkAdded, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("🏁 وضع علامة توقف نهاية ورد اليوم وإنجاز العادة", fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+                            Text("يثبت إتمام الورد اليومي ويُنجز عادة الورد تلقائياً بالمصحف", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
 
                 // 1. زر علامة التوقف عند الآية
                 Surface(
@@ -1306,6 +1334,28 @@ fun AddBookmarkDialog(
                             onClick = { selectedTag = tag },
                             label = { Text(tag, fontSize = 11.sp) }
                         )
+                    }
+                }
+
+                if (selectedTag == "ورد اليوم") {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            Text(
+                                text = "حفظ الفاصل كـ «ورد اليوم» سيعتبر نهاية الورد ويُنجز عادة الورد القرآني تلقائياً بالمصحف.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
 

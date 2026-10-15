@@ -31,6 +31,7 @@ import com.example.core.prayer.UmmAlQuraCalculator
 import com.example.data.CategoryEntity
 import com.example.data.HabitEntity
 import com.example.data.HabitLogEntity
+import com.example.ui.theme.EmeraldDeep
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.TextStyle
@@ -70,8 +71,9 @@ fun HabitDetailScreen(
         mutableStateOf(YearMonth.now())
     }
 
+    val isQuranWird = habit.autoSource in setOf("QURAN_WIRD", "WIRD")
     val isChecklist = habit.autoSource == "CHECKLIST"
-    val isCheckbox = habit.autoSource == "CHECKBOX"
+    val isCheckbox = habit.autoSource == "CHECKBOX" && !isQuranWird
     val isValue = habit.autoSource == "TARGET_VALUE"
     val isTimer = habit.autoSource == "STUDY_TIMER"
 
@@ -255,7 +257,39 @@ fun HabitDetailScreen(
                         }
 
                         // تحكم إنجاز اليوم حسب نوع العادة
-                        if (isCheckbox) {
+                        if (isQuranWird) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = EmeraldDeep.copy(alpha = 0.12f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(14.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isDoneToday) Icons.Default.CheckCircle else Icons.Default.Lock,
+                                            contentDescription = null,
+                                            tint = EmeraldDeep
+                                        )
+                                        Text(
+                                            text = if (isDoneToday) "تم إنجاز الورد بوضع علامة التوقف بالمصحف ✓" else "🔒 يكتمل آلياً بوضع علامة التوقف بالمصحف",
+                                            fontWeight = FontWeight.Bold,
+                                            color = EmeraldDeep
+                                        )
+                                    }
+                                    Text(
+                                        text = "التعبئة اليدوية ممنوعة لهذه العادة وفقاً للنظام؛ تكتمل تلقائياً عند قراءة وردك في المصحف ووضع علامة التوقف عند الآية المطلوبة منك إنهاؤها.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        } else if (isCheckbox) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()

@@ -48,7 +48,11 @@ import com.example.data.BlockScheduleEntity
 import com.example.data.BlockedAppEntity
 import com.example.features.DailyManagerUiState
 import com.example.features.DailyManagerViewModel
+import com.example.core.protection.AppUsageStatItem
+import com.example.ui.theme.EmeraldDeep
 import com.example.ui.theme.PriorityHighRed
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.ui.unit.sp
 import java.util.Locale
 import java.util.UUID
 
@@ -64,7 +68,8 @@ fun ProtectionScreen(
     viewModel: DailyManagerViewModel
 ) {
     val context = LocalContext.current
-    var selectedSection by remember { mutableIntStateOf(0) } // 0 = التطبيقات والحدود، 1 = الجداول والعقاب، 2 = المنبه الخارق
+    var selectedSection by remember { mutableIntStateOf(0) } // 0 = التطبيقات ووقت الشاشة، 1 = الجداول والتركيز، 2 = الحظر الخارق، 3 = المنبه الخارق
+    var selectedAppForDetail by remember { mutableStateOf<AppUsageStatItem?>(null) }
     var showPickInstalledAppDialog by remember { mutableStateOf(false) }
     var editingAppLimitTarget by remember { mutableStateOf<BlockedAppEntity?>(null) }
     var showAddScheduleDialog by remember { mutableStateOf(false) }
@@ -76,6 +81,28 @@ fun ProtectionScreen(
         }
     }
 
+    // إذا تم اختيار تطبيق لفتح تفاصيله
+    if (selectedAppForDetail != null) {
+        AppDetailScreen(
+            appStat = selectedAppForDetail!!,
+            blockedAppEntity = uiState.blockedApps.firstOrNull { it.packageName == selectedAppForDetail!!.packageName },
+            uiState = uiState,
+            viewModel = viewModel,
+            onBack = { selectedAppForDetail = null }
+        )
+        return
+    }
+
+    // إذا تم اختيار قسم الحظر الخارق
+    if (selectedSection == 2) {
+        SuperProtectionScreen(
+            uiState = uiState,
+            viewModel = viewModel,
+            onBack = { selectedSection = 0 }
+        )
+        return
+    }
+
     val wakeAlarms = remember(uiState.blockSchedules) {
         uiState.blockSchedules.filter { it.scheduleType == "WAKE_ALARM" }
     }
@@ -83,7 +110,7 @@ fun ProtectionScreen(
         uiState.blockSchedules.firstOrNull { it.scheduleType == "SLEEP_MODE" }
     }
     val customSchedules = remember(uiState.blockSchedules) {
-        uiState.blockSchedules.filter { it.scheduleType == "CUSTOM_BLOCK" }
+        uiState.blockSchedules.filter { it.scheduleType != "WAKE_ALARM" && it.scheduleType != "SLEEP_MODE" }
     }
 
     var showAddOrEditAlarmModal by remember { mutableStateOf(false) }
@@ -91,8 +118,6 @@ fun ProtectionScreen(
     var targetAlarmForPlacePhoto by remember { mutableStateOf<String?>(null) }
     var showPlaceCameraModal by remember { mutableStateOf(false) }
     var placeCameraModalModeIsTest by remember { mutableStateOf(false) }
-
-
 
     val hasAccessibilityEnabled: Boolean = remember(uiState.blockedApps, selectedSection) {
         ProtectionManager.isAccessibilityServiceEnabled(context)
@@ -113,26 +138,34 @@ fun ProtectionScreen(
                 SegmentedButton(
                     selected = selectedSection == 0,
                     onClick = { selectedSection = 0 },
-                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3),
-                    icon = { Icon(Icons.Default.BarChart, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 4),
+                    icon = { Icon(Icons.Default.BarChart, contentDescription = null, modifier = Modifier.size(16.dp)) }
                 ) {
-                    Text("التطبيقات", fontWeight = FontWeight.Bold)
+                    Text("التطبيقات", fontWeight = FontWeight.Bold, fontSize = 11.sp)
                 }
                 SegmentedButton(
                     selected = selectedSection == 1,
                     onClick = { selectedSection = 1 },
-                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3),
-                    icon = { Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 4),
+                    icon = { Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(16.dp)) }
                 ) {
-                    Text("الجداول", fontWeight = FontWeight.Bold)
+                    Text("الجداول", fontWeight = FontWeight.Bold, fontSize = 11.sp)
                 }
                 SegmentedButton(
                     selected = selectedSection == 2,
                     onClick = { selectedSection = 2 },
-                    shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3),
-                    icon = { Icon(Icons.Default.Alarm, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                    shape = SegmentedButtonDefaults.itemShape(index = 2, count = 4),
+                    icon = { Icon(Icons.Default.Shield, contentDescription = null, modifier = Modifier.size(16.dp)) }
                 ) {
-                    Text("المنبه الخارق", fontWeight = FontWeight.Bold)
+                    Text("الحظر الخارق", fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                }
+                SegmentedButton(
+                    selected = selectedSection == 3,
+                    onClick = { selectedSection = 3 },
+                    shape = SegmentedButtonDefaults.itemShape(index = 3, count = 4),
+                    icon = { Icon(Icons.Default.Alarm, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                ) {
+                    Text("المنبه", fontWeight = FontWeight.Bold, fontSize = 11.sp)
                 }
             }
         }
@@ -202,91 +235,72 @@ fun ProtectionScreen(
                     }
                 }
 
-                // ملخص وقت الشاشة اليوم (StayFree Dashboard)
+                // بطاقة وصول سريعة للحظر الخارق وحالته
                 item {
-                    val totalMins = uiState.usageOverview.totalScreenMinutesToday
-                    val totalMillis = uiState.usageOverview.totalScreenTimeMillisToday
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (uiState.superProtectionEnabled) {
+                            if (uiState.isSuperProtectionWindowOpenNow) EmeraldDeep.copy(alpha = 0.12f)
+                            else PriorityHighRed.copy(alpha = 0.12f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedSection = 2 }
+                            .testTag("super_protection_banner_btn")
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.weight(1f)
                             ) {
-                                Column {
-                                    Text(
-                                        text = "وقت استخدام الشاشة اليوم",
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = UmmAlQuraCalculator.toArabicDigits(
-                                            AppUsageMonitor.formatDurationArabic(totalMillis)
-                                        ),
-                                        style = MaterialTheme.typography.headlineSmall,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                                IconButton(onClick = { viewModel.refreshAppUsageOverview() }) {
-                                    Icon(Icons.Default.Refresh, contentDescription = "تحديث")
-                                }
-                            }
-
-                            if (uiState.usageOverview.topUsedApps.isNotEmpty()) {
-                                HorizontalDivider()
-                                Text(
-                                    text = "أكثر التطبيقات استهلاكاً للوقت اليوم",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                Icon(
+                                    Icons.Default.Shield,
+                                    contentDescription = null,
+                                    tint = if (uiState.superProtectionEnabled) {
+                                        if (uiState.isSuperProtectionWindowOpenNow) EmeraldDeep else PriorityHighRed
+                                    } else MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
                                 )
-                                uiState.usageOverview.topUsedApps.take(5).forEach { stat ->
-                                    val ratio = if (totalMillis > 0L) {
-                                        (stat.usedTimeMillisToday.toFloat() / totalMillis.toFloat()).coerceIn(0.04f, 1f)
-                                    } else {
-                                        (stat.usedMinutesToday.toFloat() / totalMins.coerceAtLeast(1)).coerceIn(0.04f, 1f)
-                                    }
-                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Text(
-                                                text = stat.appName,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            Text(
-                                                text = UmmAlQuraCalculator.toArabicDigits(stat.formattedDuration),
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.primary,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
-                                        LinearProgressIndicator(
-                                            progress = { ratio },
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .height(6.dp)
-                                                .clip(RoundedCornerShape(50))
-                                        )
-                                    }
-                                }
+                                Text(
+                                    text = if (uiState.superProtectionEnabled) {
+                                        if (uiState.isSuperProtectionWindowOpenNow) "الحظر الخارق: نافذة التعديل مفتوحة حالياً 🟢"
+                                        else "الحظر الخارق مقفل 🔒 (${uiState.nextSuperProtectionWindowLabel})"
+                                    } else "الحظر الخارق: اضغط لتعيين نافذة وقت تمنع التراجع والتعديل 🛡️",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp))
                         }
                     }
+                }
+
+                // ملخص وقت الاستخدام السلبي والإيجابي وإجمالي الشاشة
+                item {
+                    NegativeAndPositiveScreenTimeCard(
+                        uiState = uiState,
+                        onRefresh = { viewModel.refreshAppUsageOverview() }
+                    )
+                }
+
+                // الرسم البياني الأسبوعي لاستخدام الجوال مع التنقل بالأسابيع
+                item {
+                    WeeklyPhoneUsageCard()
+                }
+
+                // قائمة التطبيقات المستخدمة اليوم مع خيار عرض الكل والضغط للتفاصيل
+                item {
+                    ScreenTimeAppsListCard(
+                        uiState = uiState,
+                        onAppClick = { stat -> selectedAppForDetail = stat }
+                    )
                 }
 
                 // قائمة التطبيقات المقيدة والمحظورة مع الحدود اليومية
@@ -352,6 +366,16 @@ fun ProtectionScreen(
                             usedFormattedToday = formattedUsed,
                             activeBlockReason = activeReason,
                             onEditLimit = { editingAppLimitTarget = app },
+                            onOpenDetails = {
+                                selectedAppForDetail = AppUsageStatItem(
+                                    packageName = app.packageName,
+                                    appName = app.appName,
+                                    usedMinutesToday = usedToday,
+                                    usedTimeMillisToday = usedMillis,
+                                    formattedDuration = formattedUsed,
+                                    launchCountToday = uiState.usageOverview.launchesByPackageToday[app.packageName] ?: 0
+                                )
+                            },
                             onToggleStudy = { viewModel.toggleBlockedAppStudy(app) },
                             onToggleSleep = { viewModel.toggleBlockedAppSleep(app) },
                             onDelete = { viewModel.deleteBlockedApp(app.id) }
@@ -507,9 +531,10 @@ fun ProtectionScreen(
                     }
                 } else {
                     items(customSchedules, key = { it.id }) { schedule ->
-                        CustomScheduleCard(
+                        RichScheduleCard(
                             schedule = schedule,
-                            blockedApps = uiState.blockedApps,
+                            allBlockedApps = uiState.blockedApps,
+                            uiState = uiState,
                             onToggle = { viewModel.toggleScheduleEnabled(schedule) },
                             onDelete = { viewModel.deleteBlockSchedule(schedule.id) }
                         )
@@ -517,7 +542,7 @@ fun ProtectionScreen(
                 }
             }
 
-            2 -> {
+            3 -> {
                 // كارت الحماية القصوى وضمان عدم الإيقاف أو الغش (Anti-Cheat Security)
                 item {
                     Card(
@@ -817,6 +842,7 @@ fun ProtectionScreen(
     editingAppLimitTarget?.let { targetApp ->
         EditAppLimitDialog(
             app = targetApp,
+            uiState = uiState,
             onDismiss = { editingAppLimitTarget = null },
             onSave = { dailyLimit, isAlwaysBlocked ->
                 viewModel.addOrUpdateBlockedApp(
@@ -834,15 +860,23 @@ fun ProtectionScreen(
     }
 
     if (showAddScheduleDialog) {
-        AddCustomBlockScheduleModal(
+        AddRichBlockScheduleModal(
             blockedApps = uiState.blockedApps,
+            existingSchedules = customSchedules,
+            usageOverview = uiState.usageOverview,
             onDismiss = { showAddScheduleDialog = false },
-            onConfirm = { title, start24, end24, packagesCsv ->
-                viewModel.saveCustomBlockSchedule(
+            onConfirm = { title, scheduleType, start24, end24, daysCsv, packagesCsv, targetCategory, groupLimit, sessionDuration, sessionCooldown ->
+                viewModel.saveRichBlockSchedule(
                     title = title,
+                    scheduleType = scheduleType,
                     startTime24 = start24,
                     endTime24 = end24,
+                    daysOfWeek = daysCsv,
                     blockedPackagesCsv = packagesCsv,
+                    targetCategory = targetCategory,
+                    groupLimitMinutes = groupLimit,
+                    sessionDurationMinutes = sessionDuration,
+                    sessionCooldownMinutes = sessionCooldown,
                     isEnabled = true
                 )
                 showAddScheduleDialog = false
@@ -887,6 +921,7 @@ private fun BlockedAppRuleCard(
     usedFormattedToday: String,
     activeBlockReason: String?,
     onEditLimit: () -> Unit,
+    onOpenDetails: (() -> Unit)? = null,
     onToggleStudy: () -> Unit,
     onToggleSleep: () -> Unit,
     onDelete: () -> Unit
@@ -896,7 +931,9 @@ private fun BlockedAppRuleCard(
     } else 0f
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (onOpenDetails != null) Modifier.clickable { onOpenDetails() } else Modifier),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -1079,6 +1116,7 @@ private fun CustomScheduleCard(
 @Composable
 private fun EditAppLimitDialog(
     app: BlockedAppEntity,
+    uiState: DailyManagerUiState,
     onDismiss: () -> Unit,
     onSave: (dailyLimitMinutes: Int, isAlwaysBlocked: Boolean) -> Unit
 ) {
@@ -1087,6 +1125,7 @@ private fun EditAppLimitDialog(
         mutableStateOf(if (app.dailyLimitMinutes > 0) app.dailyLimitMinutes.toString() else "30")
     }
     var hasLimit by remember { mutableStateOf(app.dailyLimitMinutes > 0 && !app.isAlwaysBlocked) }
+    var showSuperProtectionAlert by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1149,6 +1188,12 @@ private fun EditAppLimitDialog(
             Button(
                 onClick = {
                     val mins = if (hasLimit && !isAlways) (limitText.toIntOrNull() ?: 30).coerceAtLeast(1) else 0
+                    if (uiState.superProtectionEnabled && !uiState.isSuperProtectionWindowOpenNow && uiState.superProtectionPreventRaisingUsageLimit) {
+                        if (app.dailyLimitMinutes > 0 && mins > app.dailyLimitMinutes) {
+                            showSuperProtectionAlert = true
+                            return@Button
+                        }
+                    }
                     onSave(mins, isAlways)
                 }
             ) {
@@ -1161,6 +1206,25 @@ private fun EditAppLimitDialog(
             }
         }
     )
+
+    if (showSuperProtectionAlert) {
+        AlertDialog(
+            onDismissRequest = { showSuperProtectionAlert = false },
+            icon = { Icon(Icons.Default.Shield, contentDescription = null, tint = PriorityHighRed) },
+            title = { Text("الحظر الخارق مفعل 🛡️", fontWeight = FontWeight.Bold) },
+            text = {
+                Text("يمنع رفع الحد اليومي للتطبيق خارج نافذة التعديل المحددة (${uiState.nextSuperProtectionWindowLabel}).\nيمكنك تقليل الحد فقط لحماية وقتك.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showSuperProtectionAlert = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = PriorityHighRed)
+                ) {
+                    Text("حسناً")
+                }
+            }
+        )
+    }
 }
 
 @Composable
