@@ -1,0 +1,25 @@
+<resources>
+    <string name="app_name">مدير يومي</string>
+    <string name="nav_today">يومي</string>
+    <string name="nav_habits">العادات</string>
+    <string name="nav_tasks">المهام</string>
+    <string name="nav_prayer">الصلاة</string>
+    <string name="nav_system">النظام والمراحل</string>
+
+    <string name="stage_1_badge">المرحلة ٣: الحماية والمنبه</string>
+    <string name="next_prayer_label">الصلاة القادمة</string>
+    <string name="remaining_time_label">الوقت المتبقي</string>
+    <string name="prayed_button_label">صليت الآن</string>
+    <string name="test_adhan_now">تجربة تنبيه الأذان وزر (صليت)</string>
+    <string name="test_alarm_10s">منبه أذان تجريبي بعد ١٠ ثوانٍ</string>
+    <string name="qibla_direction_label">اتجاه القبلة</string>
+    <string name="umm_al_qura_method">تقويم أم القرى (بدون إنترنت)</string>
+
+    <string name="add_habit_button">إضافة عادة جديدة</string>
+    <string name="add_task_button">إضافة مهمة جديدة</string>
+    <string name="toggle_dark_mode">تبديل الوضع الليلي</string>
+    <string name="select_city_desc">اختيار المدينة</string>
+
+    <string name="accessibility_service_description">خدمة حجب التطبيقات المشتتة أثناء أوقات المذاكرة ووضع النوم وحماية الالتزام بناءً على اختيارك الشخصي، مع استثناء المكالمات والمنبه وتطبيقات الطوارئ دائمًا.</string>
+    <string name="device_admin_description">يمنع حذف تطبيق مدير يومي بالخطأ أو وقت الاندفاع أثناء تفعيل جلسات التركيز أو وضع النوم. يمكنك إيقافه في أي وقت عبر مخرج الطوارئ.</string>
+</resources>

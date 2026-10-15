@@ -1,0 +1,6 @@
+{
+  "name": "مدير يومي",
+  "description": "تطبيق شخصي متكامل لإدارة اليوم من الاستيقاظ إلى النوم: مواقيت الصلاة بأم القرى، العادات، المهام، والمذاكرة بدون إنترنت.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
