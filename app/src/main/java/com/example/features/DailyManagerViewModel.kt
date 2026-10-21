@@ -11,6 +11,7 @@ import com.example.data.AppEventEntity
 import kotlinx.coroutines.flow.asStateFlow
 import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 import com.example.core.health.HealthConnectDailyData
@@ -52,6 +53,7 @@ import com.example.data.SubjectEntity
 import com.example.data.TaskEntity
 import com.example.data.WeeklyReviewEntity
 import com.example.data.WirdProgressEntity
+import com.example.data.LifeMilestoneEntity
 import com.example.data.YearWeekGoalEntity
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -67,6 +69,7 @@ data class DailyManagerUiState(
     val themePreset: com.example.ui.theme.ThemePreset = com.example.ui.theme.ThemePreset.EMERALD,
     val fontScale: Float = 1.0f,
     val selectedCity: CityLocation = UmmAlQuraCalculator.saudiCities.first(),
+    val savedCityIds: Set<String> = emptySet(),
     val prayerSchedule: DailyPrayerSchedule = UmmAlQuraCalculator.calculateScheduleForNow(
         UmmAlQuraCalculator.saudiCities.first()
     ),
@@ -144,7 +147,10 @@ data class DailyManagerUiState(
     val nextSuperProtectionWindowLabel: String = "من 01:00 م إلى 01:10 م",
     val timeUntilSuperProtectionWindowMinutes: Int = 0,
     val negativeScreenMinutesToday: Int = 0,
-    val positiveScreenMinutesToday: Int = 0
+    val positiveScreenMinutesToday: Int = 0,
+    val lifeMilestones: List<LifeMilestoneEntity> = emptyList(),
+    val userBirthDateKey: String = "2000-01-01",
+    val diagonalSwipeEnabled: Boolean = false
 )
 
 class DailyManagerViewModel(application: Application) : AndroidViewModel(application) {
@@ -249,8 +255,8 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
         combine(googleCalendarEventsFlow, gmailMessagesFlow) { calEvents, emails ->
             Pair(calEvents, emails)
         },
-        combine(repo.appEventsFlow, deviceCalendarEventsFlow, isDeviceCalendarSyncingFlow) { appEvs, devEvs, syncing ->
-            Triple(appEvs, devEvs, syncing)
+        combine(repo.appEventsFlow, deviceCalendarEventsFlow, isDeviceCalendarSyncingFlow, repo.lifeMilestonesFlow) { appEvs, devEvs, syncing, milestones ->
+            Quad(appEvs, devEvs, syncing, milestones)
         }
     ) { group1, group2, group3, group4 ->
         LocalUiBundle(
@@ -264,7 +270,8 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
             gmailMessages = group3.second,
             appEvents = group4.first,
             deviceCalendarEvents = group4.second,
-            isDeviceCalendarSyncing = group4.third
+            isDeviceCalendarSyncing = group4.third,
+            lifeMilestones = group4.fourth
         )
     }
 
@@ -285,10 +292,11 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
         val isSleepMode = settingsMap["sleep_mode_active"] == "true"
         val isStrictProtection = settingsMap["strict_protection_enabled"] != "false"
 
-        val cityId = settingsMap["city_id"] ?: "riyadh"
-        val customLat = settingsMap["custom_lat"]?.toDoubleOrNull()
-        val customLng = settingsMap["custom_lng"]?.toDoubleOrNull()
-        val customCityName = settingsMap["custom_city_name"]
+        val cityPrefs = getApplication<android.app.Application>().getSharedPreferences("prayer_cities_prefs", Context.MODE_PRIVATE)
+        val cityId = settingsMap["city_id"] ?: cityPrefs.getString("active_city_id", null) ?: "riyadh"
+        val customLat = settingsMap["custom_lat"]?.toDoubleOrNull() ?: cityPrefs.getString("active_city_lat", null)?.toDoubleOrNull()
+        val customLng = settingsMap["custom_lng"]?.toDoubleOrNull() ?: cityPrefs.getString("active_city_lng", null)?.toDoubleOrNull()
+        val customCityName = settingsMap["custom_city_name"] ?: cityPrefs.getString("active_city_name", null)
 
         val city = if (cityId == "custom" && customLat != null && customLng != null) {
             CityLocation(
@@ -334,6 +342,7 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
         val blockedApps = spQuint.third
         val blockSchedules = spQuint.fourth
         val mosques = spQuint.fifth
+        val categories = spQuint.sixth
         val userGps = insightsQuint.fourth
         val usageOverview = fullDayQuint.fifth
 
@@ -345,7 +354,11 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
         val filteredMain = if (localBundle.selectedTaskCategory == "الكل") {
             allMain
         } else {
-            allMain.filter { it.listCategory == localBundle.selectedTaskCategory }
+            val matchingCat = categories.find { it.name.trim() == localBundle.selectedTaskCategory.trim() }
+            allMain.filter {
+                it.listCategory.trim() == localBundle.selectedTaskCategory.trim() ||
+                    (matchingCat != null && it.categoryId == matchingCat.id)
+            }
         }
         val subtasksMap = coreQuint.fourth
             .filter { it.parentTaskId != null }
@@ -475,6 +488,21 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
             }
         }
 
+        // 3. ب. جداول الحظر من نوع عادة (HABIT): لا ينفك الحظر إلا عند إتمام العادة المرتبطة اليوم
+        blockSchedules.filter { it.isEnabled && it.scheduleType == "HABIT" && it.qrReferenceCode.isNotBlank() }.forEach { habitSched ->
+            val targetHabit = habits.find { it.id == habitSched.qrReferenceCode }
+            val isDoneToday = targetHabit != null && logsGrouped[targetHabit.id]?.get(todayKey)?.isCompleted == true
+            if (!isDoneToday && targetHabit != null) {
+                val schedPkgs = habitSched.blockedPackagesCsv.split(",")
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() }
+                val effectivePkgs = if (schedPkgs.isNotEmpty()) schedPkgs.toSet() else blockedApps.map { it.packageName }.toSet()
+                effectivePkgs.forEach { pkg ->
+                    enforcedReasons[pkg] = "الحظر مفعّل حتى إتمام عادة: ${targetHabit.title}"
+                }
+            }
+        }
+
         val wakeSchedule = blockSchedules.firstOrNull { it.scheduleType == "WAKE_ALARM" }
         val effectiveLockActive = isSleepMode || incompletePenaltyHabits.isNotEmpty() || enforcedReasons.isNotEmpty()
 
@@ -529,6 +557,14 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
         val flipSnooze = settingsMap["flip_to_snooze_azan"] != "false"
         val persistentPrayerNotification = settingsMap["persistent_prayer_notification"] != "false"
 
+        val savedCityIdsCsv = settingsMap["saved_city_ids"]
+            ?: cityPrefs.getString("saved_city_ids", null).orEmpty()
+        val parsedSavedCityIds = if (savedCityIdsCsv.isNotBlank()) {
+            savedCityIdsCsv.split(",").map { it.trim() }.filter { it.isNotBlank() }.toSet()
+        } else {
+            setOf(city.id)
+        }
+
         val superEnabled = settingsMap["super_protection_enabled"]?.toBooleanStrictOrNull() ?: false
         val superWindow = settingsMap["super_protection_window_time24"] ?: "13:00"
         val superUsage = settingsMap["super_protection_prevent_raising_usage_limit"]?.toBooleanStrictOrNull() ?: true
@@ -545,6 +581,7 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
             themePreset = themePreset,
             fontScale = fontScale,
             selectedCity = city,
+            savedCityIds = parsedSavedCityIds,
             prayerSchedule = schedule,
             todayPrayerStatusMap = prayerMap,
             todayPrayerLogsMap = prayerLogsMap,
@@ -614,7 +651,10 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
             nextSuperProtectionWindowLabel = superWindowLabel,
             timeUntilSuperProtectionWindowMinutes = minutesToSuperWindow,
             negativeScreenMinutesToday = negativeScreenMinutes,
-            positiveScreenMinutesToday = positiveScreenMinutes
+            positiveScreenMinutesToday = positiveScreenMinutes,
+            lifeMilestones = localBundle.lifeMilestones,
+            userBirthDateKey = settingsMap["user_birth_date"] ?: "2000-01-01",
+            diagonalSwipeEnabled = settingsMap["diagonal_swipe_enabled"] == "true"
         )
     }.stateIn(
         scope = viewModelScope,
@@ -984,6 +1024,7 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
         isAllDay: Boolean = false,
         category: String = "عام",
         reminderMinutes: Int = 15,
+        isCountdown: Boolean = false,
         syncToDevice: Boolean = false,
         context: Context? = null
     ) {
@@ -998,7 +1039,8 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
                 colorHex = colorHex,
                 isAllDay = isAllDay,
                 category = category,
-                reminderMinutesBefore = reminderMinutes
+                reminderMinutesBefore = reminderMinutes,
+                isCountdown = isCountdown
             )
             repo.upsertAppEvent(event)
 
@@ -1027,7 +1069,77 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
                 } catch (_: Exception) {}
             }
 
-            showBanner("تمت إضافة الحدث بنجاح إلى التقويم 📅")
+            showBanner("تمت إضافة الحدث بنجاح إلى التقويم")
+        }
+    }
+
+    fun addRecurringAppEvents(
+        title: String,
+        description: String = "",
+        location: String = "",
+        startDateKey: String,
+        startTime: String = "",
+        endTime: String = "",
+        colorHex: String = "#059669",
+        isAllDay: Boolean = false,
+        category: String = "عام",
+        reminderMinutes: Int = 15,
+        isCountdown: Boolean = false,
+        syncToDevice: Boolean = false,
+        daysOfWeek: Set<Int>, // 1 = Sunday ... 7 = Saturday
+        durationWeeks: Int,
+        context: Context? = null
+    ) {
+        viewModelScope.launch {
+            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+            val cal = Calendar.getInstance()
+            try {
+                cal.time = sdf.parse(startDateKey) ?: Date()
+            } catch (_: Exception) {
+                cal.time = Date()
+            }
+
+            val totalDays = (durationWeeks.coerceAtLeast(1)) * 7
+            val startCalTime = cal.timeInMillis
+            val eventsToInsert = mutableListOf<AppEventEntity>()
+
+            for (dayOffset in 0 until totalDays) {
+                val currentCal = Calendar.getInstance().apply {
+                    timeInMillis = startCalTime
+                    add(Calendar.DAY_OF_YEAR, dayOffset)
+                }
+                val dow = currentCal.get(Calendar.DAY_OF_WEEK)
+                if (daysOfWeek.contains(dow)) {
+                    val dKey = sdf.format(currentCal.time)
+                    val ev = AppEventEntity(
+                        title = title.trim(),
+                        description = description.trim(),
+                        location = location.trim(),
+                        dateKey = dKey,
+                        startTime = startTime,
+                        endTime = endTime,
+                        colorHex = colorHex,
+                        isAllDay = isAllDay,
+                        category = category,
+                        reminderMinutesBefore = reminderMinutes,
+                        isCountdown = isCountdown
+                    )
+                    eventsToInsert.add(ev)
+                }
+            }
+
+            eventsToInsert.forEach { ev ->
+                repo.upsertAppEvent(ev)
+            }
+            showBanner("تمت إضافة ${eventsToInsert.size} مواعيد متكررة بنجاح")
+        }
+    }
+
+    fun toggleEventCountdown(event: AppEventEntity) {
+        viewModelScope.launch {
+            val updated = event.copy(isCountdown = !event.isCountdown)
+            repo.upsertAppEvent(updated)
+            showBanner(if (updated.isCountdown) "تم تفعيل العداد التنازلي للحدث ⏳" else "تم إيقاف العداد التنازلي")
         }
     }
 
@@ -1035,6 +1147,27 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
         viewModelScope.launch {
             repo.deleteAppEvent(id)
             showBanner("تم حذف الحدث من التقويم")
+        }
+    }
+
+    fun saveLifeMilestone(milestone: LifeMilestoneEntity) {
+        viewModelScope.launch {
+            repo.upsertLifeMilestone(milestone)
+            showBanner("تم حفظ اللحظة المهمة بنجاح 🌟")
+        }
+    }
+
+    fun deleteLifeMilestone(id: String) {
+        viewModelScope.launch {
+            repo.deleteLifeMilestone(id)
+            showBanner("تم حذف اللحظة المهمة")
+        }
+    }
+
+    fun updateUserBirthDate(birthDate: String) {
+        viewModelScope.launch {
+            repo.updateSetting("user_birth_date", birthDate)
+            showBanner("تم تحديث تاريخ الميلاد بنجاح 🎂")
         }
     }
 
@@ -1303,10 +1436,21 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun deleteHabit(habitId: String) {
+        val currentUiState = uiState.value
+        val isLinkedToBlockSchedule = currentUiState.blockSchedules.any {
+            it.isEnabled && it.scheduleType == "HABIT" && it.qrReferenceCode == habitId
+        } || currentUiState.habits.find { it.id == habitId }?.penaltyLockApps == true
+
+        if (currentUiState.superProtectionEnabled && isLinkedToBlockSchedule) {
+            showBanner("الحظر الخارق مفعل: لا يمكن حذف هذه العادة لأنها مرتبطة بجدول حظر لحماية الجدول")
+            return
+        }
+
         viewModelScope.launch {
             AdhanNotificationHelper.cancelHabitOrTaskAlarm(getApplication(), habitId)
             repo.deleteHabit(habitId)
             pushWidgetSnapshot()
+            showBanner("تم حذف العادة بنجاح")
         }
     }
 
@@ -1705,7 +1849,8 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
         groupLimitMinutes: Int = 0,
         sessionDurationMinutes: Int = 15,
         sessionCooldownMinutes: Int = 30,
-        isEnabled: Boolean = true
+        isEnabled: Boolean = true,
+        qrReferenceCode: String = ""
     ) {
         viewModelScope.launch {
             repo.saveRichBlockSchedule(
@@ -1720,7 +1865,8 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
                 groupLimitMinutes = groupLimitMinutes,
                 sessionDurationMinutes = sessionDurationMinutes,
                 sessionCooldownMinutes = sessionCooldownMinutes,
-                isEnabled = isEnabled
+                isEnabled = isEnabled,
+                qrReferenceCode = qrReferenceCode
             )
             showBanner("تم حفظ جدول الحظر «$title»")
         }
@@ -1728,7 +1874,7 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
 
     fun startAppSession(packageName: String, durationMinutes: Int) {
         ProtectionManager.startSessionForPackage(packageName, durationMinutes)
-        showBanner("تم بدء جلسة استخدام $durationMinutes دقيقة لتطبيقك ⏱️")
+        showBanner("تم بدء جلسة استخدام $durationMinutes دقيقة لتطبيقك")
     }
 
     fun startAppCooldown(packageName: String, cooldownMinutes: Int) {
@@ -1894,12 +2040,20 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+    fun toggleDiagonalSwipe() {
+        viewModelScope.launch {
+            val next = !uiState.value.diagonalSwipeEnabled
+            repo.updateSetting("diagonal_swipe_enabled", next.toString())
+            showBanner(if (next) "تم تفعيل السحب القطري بين الزوايا" else "تم تعطيل السحب القطري")
+        }
+    }
+
     // --- تكامل Google Workspace (Calendar & Gmail) ---
 
     fun saveGoogleAccessToken(token: String, email: String = "") {
         viewModelScope.launch {
             com.example.core.google.GoogleWorkspaceManager.saveAccessToken(getApplication(), token, email)
-            showBanner("تم ربط حساب Google بنجاح ✅")
+            showBanner("تم ربط حساب Google بنجاح")
             refreshGoogleCalendarEvents()
             refreshGmailMessages()
         }
@@ -1992,12 +2146,39 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
 
     fun selectCity(cityId: String) {
         viewModelScope.launch {
-            repo.updateSetting("city_id", cityId)
             val city = UmmAlQuraCalculator.findCityById(cityId)
+            val currentSaved = uiState.value.savedCityIds
+            val updatedSaved = if (!currentSaved.contains(cityId)) currentSaved + cityId else currentSaved
+            val savedCsv = updatedSaved.joinToString(",")
+
+            val prefs = getApplication<android.app.Application>().getSharedPreferences("prayer_cities_prefs", Context.MODE_PRIVATE)
+            prefs.edit()
+                .putString("active_city_id", cityId)
+                .putString("active_city_name", city.arabicName)
+                .putString("active_city_lat", city.latitude.toString())
+                .putString("active_city_lng", city.longitude.toString())
+                .putString("saved_city_ids", savedCsv)
+                .commit()
+
+            repo.updateSetting("city_id", cityId)
+            repo.updateSetting("city_lat", city.latitude.toString())
+            repo.updateSetting("city_lng", city.longitude.toString())
+            repo.updateSetting("city_name", city.arabicName)
+            repo.updateSetting("saved_city_ids", savedCsv)
+
             val schedule = UmmAlQuraCalculator.calculateScheduleForNow(city)
             AdhanNotificationHelper.scheduleDailyPrayerAlarms(getApplication(), schedule)
             pushWidgetSnapshot(schedule)
             showBanner("تم اختيار مدينة ${city.arabicName}")
+        }
+    }
+
+    fun updateSavedCities(cityIds: Set<String>) {
+        viewModelScope.launch {
+            val csv = cityIds.joinToString(",")
+            val prefs = getApplication<android.app.Application>().getSharedPreferences("prayer_cities_prefs", Context.MODE_PRIVATE)
+            prefs.edit().putString("saved_city_ids", csv).commit()
+            repo.updateSetting("saved_city_ids", csv)
         }
     }
 
@@ -2007,6 +2188,15 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
             repo.updateSetting("custom_lat", lat.toString())
             repo.updateSetting("custom_lng", lng.toString())
             repo.updateSetting("city_id", "custom")
+
+            val prefs = getApplication<android.app.Application>().getSharedPreferences("prayer_cities_prefs", Context.MODE_PRIVATE)
+            prefs.edit()
+                .putString("active_city_id", "custom")
+                .putString("active_city_name", name.ifBlank { "موقعي" })
+                .putString("active_city_lat", lat.toString())
+                .putString("active_city_lng", lng.toString())
+                .apply()
+
             showBanner("تم تحديث موقع المدينة")
         }
     }
@@ -2052,6 +2242,8 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
     fun setPrayerBellMode(prayerType: PrayerType, mode: com.example.core.prayer.PrayerBellMode) {
         viewModelScope.launch {
             repo.updateSetting("prayer_bell_${prayerType.id}", mode.id)
+            val prefs = getApplication<android.app.Application>().getSharedPreferences("prayer_alarm_prefs", Context.MODE_PRIVATE)
+            prefs.edit().putString("prayer_bell_${prayerType.id}", mode.id).apply()
             showBanner("تم تعيين تنبيه ${prayerType.arabicName} إلى: ${mode.arabicTitle}")
         }
     }
@@ -2277,6 +2469,13 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
         val fifth: E
     )
 
+    private data class Quad<A, B, C, D>(
+        val first: A,
+        val second: B,
+        val third: C,
+        val fourth: D
+    )
+
     private data class Sext<A, B, C, D, E, F>(
         val first: A,
         val second: B,
@@ -2297,6 +2496,7 @@ class DailyManagerViewModel(application: Application) : AndroidViewModel(applica
         val gmailMessages: List<com.example.core.google.GmailEmailItem>,
         val appEvents: List<AppEventEntity>,
         val deviceCalendarEvents: List<CalendarEventItem>,
-        val isDeviceCalendarSyncing: Boolean
+        val isDeviceCalendarSyncing: Boolean,
+        val lifeMilestones: List<LifeMilestoneEntity>
     )
 }

@@ -21,10 +21,12 @@ class DailyManagerRepository(
     private val settingDao = db.settingDao()
     private val categoryDao = db.categoryDao()
     private val eventDao = db.eventDao()
+    private val milestoneDao = db.milestoneDao()
 
     val categoriesFlow: Flow<List<CategoryEntity>> = categoryDao.observeCategories()
     val activeHabitsFlow: Flow<List<HabitEntity>> = habitDao.observeActiveHabits()
     val appEventsFlow: Flow<List<AppEventEntity>> = eventDao.observeEvents()
+    val lifeMilestonesFlow: Flow<List<LifeMilestoneEntity>> = milestoneDao.observeMilestones()
     val allHabitLogsFlow: Flow<List<HabitLogEntity>> = habitDao.observeAllHabitLogs()
     val activeTasksFlow: Flow<List<TaskEntity>> = taskDao.observeActiveTasks()
     val activeSubjectsFlow: Flow<List<SubjectEntity>> = studyDao.observeActiveSubjects()
@@ -125,8 +127,28 @@ class DailyManagerRepository(
         ensureTodayAzkarSeeded(todayKey)
         ensureTodayHealthSeeded(todayKey)
 
-        if (categoryDao.getCategoriesOnce().isEmpty()) {
-            categoryDao.upsertCategories(com.example.core.habits.HabitHelper.DEFAULT_CATEGORIES)
+        // إزالة الفئات الجاهزة مسبقاً بشكل كامل
+        val oldDefaults = setOf("cat_health_fitness", "cat_learning_reading", "cat_deen_spirituality", "cat_work_productivity", "cat_personal_growth")
+        val currentCategories = categoryDao.getCategoriesOnce()
+        val allHabits = habitDao.getActiveHabitsOnce()
+        val allTasks = taskDao.getActiveTasksOnce()
+        for (cat in currentCategories) {
+            if (cat.id in oldDefaults) {
+                categoryDao.softDeleteCategory(cat.id)
+                // تنظيف مراجع العادات والمهام المرتبطة بالفئات القديمة
+                for (h in allHabits) {
+                    if (h.categoryId == cat.id) {
+                        val newCatId = if (cat.id == "cat_deen_spirituality") "cat_deen_auto" else ""
+                        habitDao.upsertHabit(h.copy(categoryId = newCatId))
+                    }
+                }
+                for (t in allTasks) {
+                    if (t.categoryId == cat.id) {
+                        val newCatId = if (cat.id == "cat_deen_spirituality") "cat_deen_auto" else ""
+                        taskDao.upsertTask(t.copy(categoryId = newCatId))
+                    }
+                }
+            }
         }
     }
 
@@ -662,13 +684,13 @@ class DailyManagerRepository(
 
         val existing = habitDao.findHabitById(habitId)
         if (enabled) {
-            val categories = categoryDao.getCategoriesOnce()
-            val deenCategory = categories.firstOrNull { it.name.contains("دين") || it.iconKey == "DEEN" } ?: categories.firstOrNull()
+            val deenCategory = getOrCreateDeenCategory()
             if (existing != null) {
                 habitDao.upsertHabit(
                     existing.copy(
                         title = habitTitle,
                         description = habitDesc,
+                        categoryId = deenCategory.id,
                         autoSource = autoSource,
                         deletedAt = null,
                         updatedAt = now
@@ -680,7 +702,7 @@ class DailyManagerRepository(
                         id = habitId,
                         title = habitTitle,
                         description = habitDesc,
-                        categoryId = deenCategory?.id ?: "",
+                        categoryId = deenCategory.id,
                         goalMode = "ACHIEVE",
                         comparisonOperator = "EQ",
                         frequencyType = "DAILY",
@@ -704,20 +726,34 @@ class DailyManagerRepository(
         }
     }
 
+    suspend fun getOrCreateDeenCategory(): CategoryEntity {
+        val categories = categoryDao.getCategoriesOnce()
+        val existing = categories.firstOrNull { it.name.trim() == "ديني" || it.id == "cat_deen_auto" }
+        if (existing != null) return existing
+        val newDeen = CategoryEntity(
+            id = "cat_deen_auto",
+            name = "ديني",
+            colorHex = "#145946",
+            iconKey = "DEEN"
+        )
+        categoryDao.upsertCategory(newDeen)
+        return newDeen
+    }
+
     suspend fun toggleQuranWirdHabit(enabled: Boolean) {
         val now = System.currentTimeMillis()
         val habitId = "habit_auto_quran_wird"
         val habitTitle = "الورد القرآني اليومي"
-        val habitDesc = "قراءة الورد القرآني اليومي في المصحف الشريف ووضع علامة التوقف عند الآية المطلوبة لإتمام الختمة المباركة"
+        val habitDesc = "قراءة الورد القرآني اليومي في المصحف الشريف ووضع علامة التوقف عند الآية المطلوبة لإتمام الختمة الحالية"
         val existing = habitDao.findHabitById(habitId)
         if (enabled) {
-            val categories = categoryDao.getCategoriesOnce()
-            val deenCategory = categories.firstOrNull { it.name.contains("دين") || it.iconKey == "DEEN" } ?: categories.firstOrNull()
+            val deenCategory = getOrCreateDeenCategory()
             if (existing != null) {
                 habitDao.upsertHabit(
                     existing.copy(
                         title = habitTitle,
                         description = habitDesc,
+                        categoryId = deenCategory.id,
                         autoSource = "QURAN_WIRD",
                         deletedAt = null,
                         updatedAt = now
@@ -729,7 +765,7 @@ class DailyManagerRepository(
                         id = habitId,
                         title = habitTitle,
                         description = habitDesc,
-                        categoryId = deenCategory?.id ?: "",
+                        categoryId = deenCategory.id,
                         goalMode = "ACHIEVE",
                         comparisonOperator = "EQ",
                         frequencyType = "DAILY",
@@ -803,6 +839,14 @@ class DailyManagerRepository(
 
     suspend fun getAppEventsOnce(): List<AppEventEntity> {
         return eventDao.getEventsOnce()
+    }
+
+    suspend fun upsertLifeMilestone(milestone: LifeMilestoneEntity) {
+        milestoneDao.upsertMilestone(milestone)
+    }
+
+    suspend fun deleteLifeMilestone(id: String) {
+        milestoneDao.deleteMilestone(id)
     }
 
     suspend fun resetAzkarLog(azkarLog: AzkarLogEntity) {
@@ -1178,6 +1222,8 @@ class DailyManagerRepository(
                 blockInStudyMode = blockInStudyMode,
                 blockInSleepMode = blockInSleepMode,
                 isAlwaysBlocked = isAlwaysBlocked,
+                isRestricted = true,
+                usageImpact = existing?.usageImpact ?: "NEUTRAL",
                 dailyLimitMinutes = dailyLimitMinutes.coerceAtLeast(0),
                 createdAt = existing?.createdAt ?: now,
                 updatedAt = now
@@ -1236,7 +1282,8 @@ class DailyManagerRepository(
         specificEnabled: Boolean
     ) {
         val now = System.currentTimeMillis()
-        val existing = protectionDao.getBlockedAppsOnce().find { it.packageName == packageName }
+        val existing = protectionDao.getBlockedAppByPackage(packageName)
+        val hasActualRestriction = dailyLimitMinutes > 0 || dailyLaunchLimit > 0 || specificEnabled
         val updated = (existing ?: BlockedAppEntity(
             packageName = packageName,
             appName = appName,
@@ -1245,6 +1292,7 @@ class DailyManagerRepository(
             appName = appName.ifBlank { existing?.appName ?: packageName },
             category = category,
             usageImpact = usageImpact,
+            isRestricted = hasActualRestriction || (existing?.isAlwaysBlocked == true),
             dailyLimitMinutes = dailyLimitMinutes.coerceAtLeast(0),
             dailyLaunchLimit = dailyLaunchLimit.coerceAtLeast(0),
             specificBlockStartTime24 = specificStartTime24,
@@ -1254,6 +1302,22 @@ class DailyManagerRepository(
             updatedAt = now
         )
         protectionDao.upsertBlockedApp(updated)
+    }
+
+    suspend fun archiveDailyAppUsage(
+        usageItems: List<DailyAppUsageArchiveEntity>
+    ) {
+        if (usageItems.isNotEmpty()) {
+            protectionDao.upsertDailyUsageArchives(usageItems)
+        }
+    }
+
+    suspend fun getDailyUsageArchive(dateKey: String): List<DailyAppUsageArchiveEntity> {
+        return protectionDao.getDailyUsageArchiveOnce(dateKey)
+    }
+
+    suspend fun markAppUninstalled(packageName: String, uninstalled: Boolean) {
+        protectionDao.setAppUninstalledStatus(packageName, uninstalled)
     }
 
     suspend fun saveRichBlockSchedule(
@@ -1268,7 +1332,8 @@ class DailyManagerRepository(
         groupLimitMinutes: Int = 0,
         sessionDurationMinutes: Int = 15,
         sessionCooldownMinutes: Int = 30,
-        isEnabled: Boolean = true
+        isEnabled: Boolean = true,
+        qrReferenceCode: String = ""
     ): BlockScheduleEntity {
         val now = System.currentTimeMillis()
         val schedule = BlockScheduleEntity(
@@ -1284,6 +1349,7 @@ class DailyManagerRepository(
             sessionDurationMinutes = sessionDurationMinutes,
             sessionCooldownMinutes = sessionCooldownMinutes,
             isEnabled = isEnabled,
+            qrReferenceCode = qrReferenceCode,
             createdAt = now,
             updatedAt = now
         )

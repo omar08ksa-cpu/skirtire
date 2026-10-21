@@ -52,6 +52,7 @@ import com.example.data.HabitLogEntity
 import com.example.data.SubjectEntity
 import com.example.features.DailyManagerUiState
 import com.example.features.DailyManagerViewModel
+import com.example.features.protection.formatTimeArabic
 import com.example.ui.theme.EmeraldDeep
 import com.example.ui.theme.MintAccent
 import com.example.ui.theme.PriorityHighRed
@@ -64,6 +65,7 @@ fun HabitsScreen(
     viewModel: DailyManagerViewModel,
     onStartHabitTimer: (HabitEntity) -> Unit,
     onNavigateToReligious: () -> Unit = {},
+    onNavigateToQuran: () -> Unit = onNavigateToReligious,
     modifier: Modifier = Modifier
 ) {
     var selectedSection by rememberSaveable { mutableIntStateOf(0) } // 0 = العادات اليومية، 1 = السجل والإحصائيات
@@ -104,8 +106,40 @@ fun HabitsScreen(
             onDeleteHabit = {
                 viewModel.deleteHabit(currentHabit.id)
                 selectedHabitForDetail = null
+            },
+            onEditAlarm = { editingAlarmHabit = currentHabit },
+            onEditPenalty = {},
+            onNavigateToQuran = {
+                selectedHabitForDetail = null
+                onNavigateToQuran()
             }
         )
+
+        editingAlarmHabit?.let { habit ->
+            CustomizableAlarmDialog(
+                title = "منبه العادة: ${habit.title}",
+                initialEnabled = habit.alarmEnabled,
+                initialTime24 = habit.alarmTime24,
+                initialAlarmType = habit.alarmType,
+                initialVerifyMethod = habit.alarmVerifyMethod,
+                initialPlaceName = habit.alarmPlaceName,
+                initialQrCode = habit.alarmQrCode,
+                onDismiss = { editingAlarmHabit = null },
+                onSave = { time24, enabled, alarmType, verifyMethod, placeName, qrCode ->
+                    viewModel.updateHabitAlarm(
+                        habitId = habit.id,
+                        alarmTime24 = time24,
+                        alarmEnabled = enabled,
+                        alarmType = alarmType,
+                        alarmVerifyMethod = verifyMethod,
+                        alarmPlaceName = placeName,
+                        alarmQrCode = qrCode
+                    )
+                    editingAlarmHabit = null
+                }
+            )
+        }
+
         return
     }
 
@@ -119,6 +153,7 @@ fun HabitsScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets(0.dp),
         floatingActionButton = {
             if (selectedSection == 0) {
                 ExtendedFloatingActionButton(
@@ -140,7 +175,7 @@ fun HabitsScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .testTag("habits_screen_list"),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // شريط التبديل بين العادات اليومية والسجل والإحصائيات
@@ -228,7 +263,7 @@ fun HabitsScreen(
                     item {
                         QuranWirdHabitPromoCard(
                             onAddWirdHabit = { viewModel.toggleQuranWirdHabit(true) },
-                            onNavigateToQuran = onNavigateToReligious
+                            onNavigateToQuran = onNavigateToQuran
                         )
                     }
                 }
@@ -304,17 +339,8 @@ fun HabitsScreen(
                             onStartTimer = {
                                 onStartHabitTimer(habit)
                             },
-                            onEditPenalty = {
-                                viewModel.refreshAppUsageOverview()
-                                editingPenaltyHabit = habit
-                            },
-                            onEditAlarm = {
-                                editingAlarmHabit = habit
-                            },
-                            onDelete = {
-                                viewModel.deleteHabit(habit.id)
-                            },
                             onNavigateToReligious = onNavigateToReligious,
+                            onNavigateToQuran = onNavigateToQuran,
                             onShowWirdBlockNotice = {
                                 showQuranWirdManualBlockDialog = true
                             }
@@ -490,13 +516,13 @@ fun HabitsScreen(
                 Button(
                     onClick = {
                         showQuranWirdManualBlockDialog = false
-                        onNavigateToReligious()
+                        onNavigateToQuran()
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = EmeraldDeep)
                 ) {
                     Icon(Icons.Default.MenuBook, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("فتح المصحف للورد 📖", fontWeight = FontWeight.Bold)
+                    Text("فتح المصحف للورد", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
@@ -920,10 +946,8 @@ private fun HabitItemCard(
     onIncrementValue: () -> Unit,
     onEditExactValue: () -> Unit,
     onStartTimer: () -> Unit,
-    onEditPenalty: () -> Unit,
-    onEditAlarm: () -> Unit,
-    onDelete: () -> Unit,
     onNavigateToReligious: () -> Unit = {},
+    onNavigateToQuran: () -> Unit = {},
     onShowWirdBlockNotice: () -> Unit = {}
 ) {
     val completedCount = todayLog?.completedCount ?: 0
@@ -948,16 +972,16 @@ private fun HabitItemCard(
     }
 
     val typeBadge = when {
-        isQuranWirdHabit -> "ورد القرآن 📖"
-        habit.autoSource == "AZKAR_MORNING" -> "أذكار الصباح ☀️"
-        habit.autoSource == "AZKAR_EVENING" -> "أذكار المساء 🌙"
-        habit.autoSource == "AZKAR" -> "أذكار دينية 🕌"
-        isCheckbox -> "صح / خطأ"
+        isQuranWirdHabit -> "الورد القرآني"
+        habit.autoSource == "AZKAR_MORNING" -> "أذكار الصباح"
+        habit.autoSource == "AZKAR_EVENING" -> "أذكار المساء"
+        habit.autoSource == "AZKAR" -> "أذكار دينية"
+        isCheckbox -> "تحقق"
         isValueHabit -> "هدف رقمي"
         isChecklist -> "قائمة تحقق"
         habit.autoSource == "MOSQUE_PRAYER" -> "تحقق المسجد"
         isTimerHabit -> if (habit.timerType == "POMODORO") "بومودورو" else "مؤقت تصاعدي"
-        isHealthHabit -> "Health Connect"
+        isHealthHabit -> "الصحة"
         else -> "تلقائي"
     }
 
@@ -965,20 +989,25 @@ private fun HabitItemCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onOpenDetail() },
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (isDoneToday) {
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.22f)
             } else {
-                MaterialTheme.colorScheme.surface
+                MaterialTheme.colorScheme.surfaceContainerLow
             }
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        border = BorderStroke(
+            1.dp,
+            if (isDoneToday) MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(
@@ -1060,66 +1089,9 @@ private fun HabitItemCard(
                 )
             }
 
-            // شريط أيام الأسبوع السبعة للعادة (السبت..الجمعة) مع تلوين حالة كل يوم
-            val currentWeekDays = remember(logsByDate, habit) {
-                val today = LocalDate.now()
-                val daysSinceSat = when (today.dayOfWeek.value) {
-                    6 -> 0
-                    7 -> 1
-                    else -> today.dayOfWeek.value + 1
-                }
-                val saturday = today.minusDays(daysSinceSat.toLong())
-                val dayLetters = listOf("س", "ح", "ن", "ث", "ر", "خ", "ج")
-                (0..6).map { idx ->
-                    val date = saturday.plusDays(idx.toLong())
-                    val dKey = date.toString()
-                    val log = logsByDate[dKey]
-                    val status = HabitHelper.resolveDayStatus(habit, log, dKey, today.toString())
-                    val isToday = date == today
-                    Triple(dayLetters[idx], status, isToday)
-                }
-            }
-
+            // أزرار التحقق والإنجاز (أعلى من شريط الأيام)
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                currentWeekDays.forEach { (letter, status, isToday) ->
-                    val (bgColor, textColor, borderColor) = when (status) {
-                        HabitDayStatus.COMPLETED -> Triple(Color(0xFF10B981), Color.White, Color(0xFF10B981))
-                        HabitDayStatus.PARTIAL -> Triple(Color(0xFFF59E0B), Color.White, Color(0xFFF59E0B))
-                        HabitDayStatus.FAILED -> Triple(Color(0xFFEF4444), Color.White, Color(0xFFEF4444))
-                        HabitDayStatus.REST_SKIP -> Triple(Color(0xFF3B82F6), Color.White, Color(0xFF3B82F6))
-                        HabitDayStatus.UNRECORDED -> Triple(Color.Transparent, MaterialTheme.colorScheme.onSurfaceVariant, MaterialTheme.colorScheme.outlineVariant)
-                    }
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(28.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(bgColor)
-                            .border(
-                                width = if (isToday) 2.dp else 1.dp,
-                                color = if (isToday) MaterialTheme.colorScheme.primary else borderColor,
-                                shape = RoundedCornerShape(6.dp)
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = letter,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = if (isToday) FontWeight.ExtraBold else FontWeight.Bold,
-                            color = textColor
-                        )
-                    }
-                }
-            }
-
-            // أزرار الإنجاز، قفل العقاب، والمنبه الذكي
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 when {
@@ -1127,8 +1099,7 @@ private fun HabitItemCard(
                         if (isDoneToday) {
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
-                                color = EmeraldDeep.copy(alpha = 0.15f),
-                                modifier = Modifier.clickable { onShowWirdBlockNotice() }
+                                color = EmeraldDeep.copy(alpha = 0.12f)
                             ) {
                                 Row(
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -1136,38 +1107,21 @@ private fun HabitItemCard(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     Icon(Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldDeep, modifier = Modifier.size(16.dp))
-                                    Text("تم إتمام الورد ووضع علامة التوقف ✓", color = EmeraldDeep, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    Text("تم إتمام الورد اليومي", color = EmeraldDeep, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                 }
                             }
                         } else {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            FilledTonalButton(
+                                onClick = onNavigateToQuran,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = EmeraldDeep.copy(alpha = 0.15f),
+                                    contentColor = EmeraldDeep
+                                )
                             ) {
-                                FilledTonalButton(
-                                    onClick = onNavigateToReligious,
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                    colors = ButtonDefaults.filledTonalButtonColors(
-                                        containerColor = EmeraldDeep.copy(alpha = 0.15f),
-                                        contentColor = EmeraldDeep
-                                    )
-                                ) {
-                                    Icon(Icons.Default.MenuBook, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("قراءة الورد بالمصحف 📖", fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
-                                }
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = MaterialTheme.colorScheme.surfaceVariant,
-                                    modifier = Modifier.clickable { onShowWirdBlockNotice() }
-                                ) {
-                                    Text(
-                                        text = "🔒 يكتمل بعلامة التوقف",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                                    )
-                                }
+                                Icon(Icons.Default.MenuBook, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("اذهب للمصحف", fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
                             }
                         }
                     }
@@ -1175,7 +1129,7 @@ private fun HabitItemCard(
                         if (isDoneToday) {
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
-                                color = EmeraldDeep.copy(alpha = 0.15f)
+                                color = EmeraldDeep.copy(alpha = 0.12f)
                             ) {
                                 Row(
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -1183,7 +1137,7 @@ private fun HabitItemCard(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     Icon(Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldDeep, modifier = Modifier.size(16.dp))
-                                    Text("تمت القراءة بالقسم الديني ✓", color = EmeraldDeep, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    Text("تمت قراءة الأذكار", color = EmeraldDeep, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                 }
                             }
                         } else {
@@ -1197,28 +1151,38 @@ private fun HabitItemCard(
                             ) {
                                 Icon(Icons.Default.MenuBook, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("قراءة في القسم الديني 🕌", fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
+                                Text("قراءة الأذكار", fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
                             }
                         }
                     }
                     isCheckbox -> {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(
-                                selected = isDoneToday,
+                        // زر واحد فقط: صح عند عدم الإنجاز، ويتحول إلى خطأ رمادي عند الإنجاز لإلغائه
+                        if (!isDoneToday) {
+                            FilledTonalButton(
                                 onClick = { onSetCheckbox(true) },
-                                label = { Text("تم", fontWeight = FontWeight.Bold) },
-                                leadingIcon = {
-                                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
-                                }
-                            )
-                            FilterChip(
-                                selected = !isDoneToday && todayLog != null,
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = EmeraldDeep.copy(alpha = 0.15f),
+                                    contentColor = EmeraldDeep
+                                )
+                            ) {
+                                Icon(Icons.Default.Check, contentDescription = "تحقق", modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("تحقق", fontWeight = FontWeight.Bold)
+                            }
+                        } else {
+                            FilledTonalButton(
                                 onClick = { onSetCheckbox(false) },
-                                label = { Text("لم يتم") },
-                                leadingIcon = {
-                                    Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(16.dp))
-                                }
-                            )
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                )
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = "إلغاء الإنجاز", modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("إلغاء الإنجاز", fontWeight = FontWeight.Normal)
+                            }
                         }
                     }
                     isValueHabit -> {
@@ -1250,42 +1214,61 @@ private fun HabitItemCard(
                             Text("بدء العداد", fontWeight = FontWeight.Bold)
                         }
                     }
-                    else -> {
-                        Spacer(modifier = Modifier.width(4.dp))
-                    }
+                    else -> {}
                 }
+            }
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    IconButton(onClick = onEditPenalty) {
-                        Icon(
-                            imageVector = if (habit.penaltyLockApps) Icons.Default.Lock else Icons.Outlined.LockOpen,
-                            contentDescription = "قفل العقاب",
-                            tint = if (habit.penaltyLockApps) PriorityHighRed else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+            // شريط أيام الأسبوع السبعة للعادة (السبت..الجمعة) مع تلوين حالة كل يوم (أسفل زر الإنجاز)
+            val currentWeekDays = remember(logsByDate, habit) {
+                val today = LocalDate.now()
+                val daysSinceSat = when (today.dayOfWeek.value) {
+                    6 -> 0
+                    7 -> 1
+                    else -> today.dayOfWeek.value + 1
+                }
+                val saturday = today.minusDays(daysSinceSat.toLong())
+                val dayLetters = listOf("س", "ح", "ن", "ث", "ر", "خ", "ج")
+                (0..6).map { idx ->
+                    val date = saturday.plusDays(idx.toLong())
+                    val dKey = date.toString()
+                    val log = logsByDate[dKey]
+                    val status = HabitHelper.resolveDayStatus(habit, log, dKey, today.toString())
+                    val isToday = date == today
+                    Triple(dayLetters[idx], status, isToday)
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                currentWeekDays.forEach { (letter, status, isToday) ->
+                    val (bgColor, textColor, borderColor) = when (status) {
+                        HabitDayStatus.COMPLETED -> Triple(Color(0xFF10B981), Color.White, Color(0xFF10B981))
+                        HabitDayStatus.PARTIAL -> Triple(Color(0xFFF59E0B), Color.White, Color(0xFFF59E0B))
+                        HabitDayStatus.FAILED -> Triple(Color.Transparent, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                        HabitDayStatus.REST_SKIP -> Triple(Color(0xFF3B82F6), Color.White, Color(0xFF3B82F6))
+                        HabitDayStatus.UNRECORDED -> Triple(Color.Transparent, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
                     }
-
-                    IconButton(
-                        onClick = onEditAlarm,
-                        modifier = Modifier.testTag("habit_alarm_btn_${habit.id}")
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(28.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(bgColor)
+                            .border(
+                                width = if (isToday) 2.dp else 1.dp,
+                                color = if (isToday) MaterialTheme.colorScheme.primary else borderColor,
+                                shape = RoundedCornerShape(6.dp)
+                            ),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = if (habit.alarmEnabled) Icons.Default.NotificationsActive else Icons.Default.NotificationsOff,
-                            contentDescription = "منبه العادة",
-                            tint = if (habit.alarmEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    IconButton(
-                        onClick = onDelete,
-                        modifier = Modifier.testTag("delete_habit_${habit.id}")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.DeleteOutline,
-                            contentDescription = "حذف",
-                            tint = MaterialTheme.colorScheme.error
+                        Text(
+                            text = letter,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = if (isToday) FontWeight.ExtraBold else FontWeight.Bold,
+                            color = textColor
                         )
                     }
                 }
@@ -1418,6 +1401,7 @@ private fun OrganizedAddHabitDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp, bottomStart = 16.dp, bottomEnd = 16.dp),
         title = { Text("إضافة عادة جديدة", fontWeight = FontWeight.ExtraBold) },
         text = {
             Column(
@@ -1488,7 +1472,7 @@ private fun OrganizedAddHabitDialog(
                         FilterChip(
                             selected = selectedCategory == "CHECKBOX",
                             onClick = { selectedCategory = "CHECKBOX" },
-                            label = { Text("صح / خطأ", fontWeight = FontWeight.Bold) },
+                            label = { Text("تحقق", fontWeight = FontWeight.Bold) },
                             leadingIcon = { Icon(Icons.Default.CheckCircleOutline, contentDescription = null, modifier = Modifier.size(16.dp)) },
                             modifier = Modifier.weight(1f)
                         )
@@ -1690,7 +1674,7 @@ private fun OrganizedAddHabitDialog(
                                                         when (item.type) {
                                                             "VALUE" -> "قيمة"
                                                             "TIMER" -> "مؤقت"
-                                                            else -> "صح/خطأ"
+                                                            else -> "تحقق"
                                                         },
                                                         style = MaterialTheme.typography.labelSmall
                                                     )
@@ -1701,7 +1685,7 @@ private fun OrganizedAddHabitDialog(
                                                 onDismissRequest = { typeMenuExpanded = false }
                                             ) {
                                                 DropdownMenuItem(
-                                                    text = { Text("صح وخطأ") },
+                                                    text = { Text("تحقق") },
                                                     onClick = {
                                                         checklistItems = checklistItems.toMutableList().also {
                                                             it[index] = item.copy(type = "CHECKBOX")
@@ -2066,35 +2050,7 @@ private fun OrganizedAddHabitDialog(
                     )
                 }
 
-                HorizontalDivider()
 
-                // قسم قفل العقاب
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("قفل العقاب (حظر تطبيقات حتى الإنجاز)", fontWeight = FontWeight.Bold)
-                    Switch(checked = penaltyLockApps, onCheckedChange = { penaltyLockApps = it })
-                }
-
-                if (penaltyLockApps) {
-                    PenaltySelectionSection(
-                        schedules = schedules,
-                        blockedApps = blockedApps,
-                        usageOverview = usageOverview,
-                        selectedScheduleId = penaltyScheduleId,
-                        onSelectScheduleId = { penaltyScheduleId = it },
-                        selectedPackages = selectedPenaltyPackages,
-                        onTogglePackage = { pkg ->
-                            selectedPenaltyPackages = if (pkg in selectedPenaltyPackages) {
-                                selectedPenaltyPackages - pkg
-                            } else {
-                                selectedPenaltyPackages + pkg
-                            }
-                        }
-                    )
-                }
 
                 HorizontalDivider()
 
@@ -2182,9 +2138,9 @@ private fun OrganizedAddHabitDialog(
                             breakMin,
                             rounds,
                             if (selectedCategory == "STUDY_TIMER") selectedSubjectId else "",
-                            penaltyLockApps,
-                            if (penaltyLockApps) penaltyScheduleId else "",
-                            if (penaltyLockApps) selectedPenaltyPackages.joinToString(",") else "",
+                            false,
+                            "",
+                            "",
                             alarmEnabled,
                             if (alarmEnabled) alarmTime24.trim() else "",
                             alarmType,
@@ -2419,13 +2375,72 @@ internal fun AlarmCustomizationFields(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            OutlinedTextField(
-                value = time24,
-                onValueChange = onTimeChange,
-                label = { Text("وقت المنبه") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
+            val context = LocalContext.current
+            val timeParts = remember(time24) {
+                val parts = time24.split(":")
+                val h = parts.getOrNull(0)?.toIntOrNull() ?: 6
+                val m = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                Pair(h, m)
+            }
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        val dialog = android.app.TimePickerDialog(
+                            context,
+                            { _, hourOfDay, minute ->
+                                onTimeChange(String.format(java.util.Locale.ENGLISH, "%02d:%02d", hourOfDay, minute))
+                            },
+                            timeParts.first,
+                            timeParts.second,
+                            false
+                        )
+                        dialog.show()
+                    }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "وقت المنبه",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = formatTimeArabic(time24.ifBlank { "06:00" }),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    FilledTonalButton(
+                        onClick = {
+                            val dialog = android.app.TimePickerDialog(
+                                context,
+                                { _, hourOfDay, minute ->
+                                    onTimeChange(String.format(java.util.Locale.ENGLISH, "%02d:%02d", hourOfDay, minute))
+                                },
+                                timeParts.first,
+                                timeParts.second,
+                                false
+                            )
+                            dialog.show()
+                        },
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Default.AccessTime, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("اختيار الساعة", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
 
             Text(
                 text = "نوع المنبه",
@@ -2733,7 +2748,7 @@ private fun QuranWirdHabitPromoCard(
                     shape = RoundedCornerShape(10.dp),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                 ) {
-                    Text("المصحف 📖", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("المصحف", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 Button(

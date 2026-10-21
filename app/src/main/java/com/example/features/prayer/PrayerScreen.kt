@@ -82,30 +82,32 @@ import kotlin.math.*
 fun PrayerScreen(
     uiState: DailyManagerUiState,
     viewModel: DailyManagerViewModel,
-    onFullScreenChange: (Boolean) -> Unit = {},
+    initialSubScreen: String = "MAIN",
+    onSubScreenConsumed: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val bookmarks: List<QuranBookmarkEntity> by viewModel.quranBookmarks.collectAsStateWithLifecycle()
     var currentSubScreen by rememberSaveable { mutableStateOf("MAIN") }
-    var selectedSubTab by rememberSaveable { mutableIntStateOf(0) } // 0=الصلاة، 1=الورد، 2=الأذكار
+
+    LaunchedEffect(initialSubScreen) {
+        if (initialSubScreen != "MAIN") {
+            currentSubScreen = initialSubScreen
+            onSubScreenConsumed()
+        }
+    }
+
+    var selectedSubTab by rememberSaveable { mutableIntStateOf(0) } // 0=الصلاة، 1=الختمة، 2=الأذكار
     var showMapPickerDialog by remember { mutableStateOf(false) }
     var showWirdDialog by remember { mutableStateOf(false) }
     var showKhatmahPlannerDialog by remember { mutableStateOf(false) }
     var showBookmarksDrawer by remember { mutableStateOf(false) }
     var quranInitialPage by rememberSaveable { mutableIntStateOf(1) }
-    var activeAthkarCategory by remember { mutableStateOf<String?>(null) } // "MORNING" أو "EVENING"
-
-    LaunchedEffect(currentSubScreen) {
-        val isFullscreen = currentSubScreen == "QURAN_READER" || currentSubScreen == "SETTINGS_AND_ALARMS"
-        onFullScreenChange(isFullscreen)
+    var activeAthkarCategory by remember { mutableStateOf<String?>(null) } // "MORNING", "EVENING", "AFTER_PRAYER", "SLEEP"
+    var visibleAthkarCategories by rememberSaveable {
+        mutableStateOf(setOf("MORNING", "EVENING", "AFTER_PRAYER", "SLEEP"))
     }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            onFullScreenChange(false)
-        }
-    }
+    var showCustomizeAthkarDialog by remember { mutableStateOf(false) }
 
     when (currentSubScreen) {
         "QURAN_READER" -> {
@@ -137,6 +139,8 @@ fun PrayerScreen(
         "CITIES" -> {
             PrayerCitiesScreen(
                 currentCityId = uiState.selectedCity.id,
+                savedCityIds = uiState.savedCityIds,
+                onUpdateSavedCities = { newIds -> viewModel.updateSavedCities(newIds) },
                 onSelectCity = { cityId ->
                     viewModel.selectCity(cityId)
                     currentSubScreen = "MAIN"
@@ -194,7 +198,7 @@ fun PrayerScreen(
                     shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3),
                     icon = { Icon(Icons.Default.AutoStories, contentDescription = null, modifier = Modifier.size(18.dp)) }
                 ) {
-                    Text("الورد", fontWeight = FontWeight.Bold)
+                    Text("الختمة", fontWeight = FontWeight.Bold)
                 }
                 SegmentedButton(
                     selected = selectedSubTab == 2,
@@ -225,7 +229,7 @@ fun PrayerScreen(
                     ) {
                         Surface(
                             shape = RoundedCornerShape(14.dp),
-                            color = EmeraldDeep.copy(alpha = 0.10f),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
                             modifier = Modifier
                                 .weight(1f)
                                 .clickable { currentSubScreen = "SETTINGS_AND_ALARMS" }
@@ -236,9 +240,9 @@ fun PrayerScreen(
                                 horizontalArrangement = Arrangement.Center,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.Tune, contentDescription = null, tint = EmeraldDeep, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Default.Tune, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("الضبط والمنبهات", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = EmeraldDeep)
+                                Text("الضبط والتنبيهات", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
 
@@ -257,7 +261,7 @@ fun PrayerScreen(
                             ) {
                                 Icon(Icons.Default.CalendarMonth, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("تقويم الصلوات", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                Text("تقويم الصلوات", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
 
@@ -276,17 +280,16 @@ fun PrayerScreen(
                             ) {
                                 Icon(Icons.Default.Public, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("مواقيت المدن", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                Text("مواقيت المدن", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
                 }
 
-                // 3. كل الصلوات في مربعات - الضغط على أي صلاة ينقل للضبط والمنبهات
+                // 3. كل الصلوات الخمس في سطر واحد بدون الشروق وبدون إيموجيات أو منبهات
                 item {
                     val displayPrayers = listOf(
                         PrayerType.FAJR,
-                        PrayerType.SUNRISE,
                         PrayerType.DHUHR,
                         PrayerType.ASR,
                         PrayerType.MAGHRIB,
@@ -297,55 +300,19 @@ fun PrayerScreen(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        Text(
+                            text = "مواقيت اليوم",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+
+                        // الصلوات الخمس في سطر واحد
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Text(
-                                text = "مواقيت اليوم (اضغط على أي صلاة للضبط)",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "المنبهات 🔔",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = EmeraldDeep,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.clickable { currentSubScreen = "SETTINGS_AND_ALARMS" }
-                            )
-                        }
-
-                        // الصف الأول: الفجر، الشروق، الظهر
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            displayPrayers.take(3).forEach { pType ->
-                                val slot = schedule.prayers.find { it.type == pType }
-                                val status = uiState.todayPrayerStatusMap[pType] ?: "PENDING"
-                                val isNext = pType == schedule.nextPrayer.type
-                                val bellMode = uiState.prayerBellModesMap[pType] ?: if (pType.isObligatory) com.example.core.prayer.PrayerBellMode.AZAN else com.example.core.prayer.PrayerBellMode.SILENT
-
-                                PrayerSquareCard(
-                                    prayerType = pType,
-                                    timeFormatted = slot?.formatted12h ?: "--:--",
-                                    status = status,
-                                    isNext = isNext,
-                                    bellMode = bellMode,
-                                    onClick = { currentSubScreen = "SETTINGS_AND_ALARMS" },
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        }
-
-                        // الصف الثاني: العصر، المغرب، العشاء
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            displayPrayers.drop(3).forEach { pType ->
+                            displayPrayers.forEach { pType ->
                                 val slot = schedule.prayers.find { it.type == pType }
                                 val status = uiState.todayPrayerStatusMap[pType] ?: "PENDING"
                                 val isNext = pType == schedule.nextPrayer.type
@@ -363,34 +330,6 @@ fun PrayerScreen(
                             }
                         }
                     }
-                }
-
-                // 3. قسم المساجد المعتمدة والخريطة التفاعلية
-                item {
-                    MosqueLocationsSectionCard(
-                        mosques = uiState.mosqueLocations,
-                        hasLocationPermission = hasLocationPermission,
-                        onRequestPermission = {
-                            locationPermissionLauncher.launch(
-                                arrayOf(
-                                    Manifest.permission.ACCESS_FINE_LOCATION,
-                                    Manifest.permission.ACCESS_COARSE_LOCATION
-                                )
-                            )
-                        },
-                        onOpenMapPicker = { showMapPickerDialog = true },
-                        onDeleteMosque = { viewModel.deleteMosqueLocation(it) },
-                        onOpenInGoogleMaps = { mosque ->
-                            try {
-                                val uri = Uri.parse("geo:${mosque.latitude},${mosque.longitude}?q=${mosque.latitude},${mosque.longitude}(${Uri.encode(mosque.name)})")
-                                val mapIntent = Intent(Intent.ACTION_VIEW, uri).apply {
-                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                                }
-                                context.startActivity(mapIntent)
-                            } catch (_: Exception) {
-                            }
-                        }
-                    )
                 }
 
                 // 4. بوصلة القبلة
@@ -428,7 +367,7 @@ fun PrayerScreen(
                                 Column {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
-                                            text = "الختمة القرآنية المباركة",
+                                            text = "الختمة الحالية",
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.ExtraBold
                                         )
@@ -551,7 +490,7 @@ fun PrayerScreen(
                             ) {
                                 Icon(Icons.Default.MenuBook, contentDescription = null, modifier = Modifier.size(20.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("فتح المصحف الشريف والتلاوة 📖", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                Text("فتح المصحف الشريف والتلاوة", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                             }
 
                             // Secondary Quick Actions Row
@@ -691,14 +630,19 @@ fun PrayerScreen(
                 item {
                     val isMorningHabitOn = uiState.habits.any { it.autoSource == "AZKAR_MORNING" && it.deletedAt == null }
                     val isEveningHabitOn = uiState.habits.any { it.autoSource == "AZKAR_EVENING" && it.deletedAt == null }
+                    val isAfterPrayerHabitOn = uiState.habits.any { it.autoSource == "AZKAR_AFTER_PRAYER" && it.deletedAt == null }
+                    val isSleepHabitOn = uiState.habits.any { it.autoSource == "AZKAR_SLEEP" && it.deletedAt == null }
+
                     val morningLog = uiState.todayAzkarLogs.find { it.categoryCode == "MORNING" }
                     val eveningLog = uiState.todayAzkarLogs.find { it.categoryCode == "EVENING" }
+                    val afterPrayerLog = uiState.todayAzkarLogs.find { it.categoryCode == "AFTER_PRAYER" }
+                    val sleepLog = uiState.todayAzkarLogs.find { it.categoryCode == "SLEEP" }
 
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        // كرت تمهيدي أنيق
+                        // كرت تمهيدي أنيق مع زر تخصيص الأذكار
                         Card(
                             shape = RoundedCornerShape(20.dp),
                             colors = CardDefaults.cardColors(
@@ -710,21 +654,42 @@ fun PrayerScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
                                 Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Icons.Default.Spa, contentDescription = null, tint = EmeraldDeep)
-                                    Text(
-                                        text = "أذكار حصن المسلم المأثورة",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Black
-                                    )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(Icons.Default.Spa, contentDescription = null, tint = EmeraldDeep)
+                                        Text(
+                                            text = "أذكار حصن المسلم المأثورة",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Black
+                                        )
+                                    }
+
+                                    // زر تخصيص الأذكار التي تظهر للمستخدم
+                                    FilledTonalButton(
+                                        onClick = { showCustomizeAthkarDialog = true },
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                        colors = ButtonDefaults.filledTonalButtonColors(
+                                            containerColor = EmeraldDeep.copy(alpha = 0.12f),
+                                            contentColor = EmeraldDeep
+                                        ),
+                                        modifier = Modifier.testTag("customize_athkar_btn")
+                                    ) {
+                                        Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("تخصيص الأذكار", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
                                 }
                                 Text(
-                                    text = "اقرأ أذكار الصباح والمساء بالبطاقات التفاعلية مع عداد التسبيح الذكي. عند تفعيلها كعادة يومية ستظهر في صفحة العادات وتُنجز تلقائياً بمجرد إتمام القراءة هنا.",
+                                    text = "اقرأ أذكارك المأثورة بالبطاقات التفاعلية مع عداد التسبيح الذكي. يمكنك تخصيص الأبواب التي تظهر لك وتفعيلها كعادات يومية.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     lineHeight = 20.sp
@@ -732,38 +697,90 @@ fun PrayerScreen(
                             }
                         }
 
-                        // بطاقة أذكار الصباح
-                        HeroAthkarCategoryCard(
-                            title = "أذكار الصباح",
-                            subtitle = "١٣ ذكراً مأثوراً لحفظ اليوم والبركة والنشاط",
-                            isMorning = true,
-                            isCompletedToday = morningLog?.isCompleted == true,
-                            isHabitEnabled = isMorningHabitOn,
-                            onToggleHabit = { enabled ->
-                                viewModel.toggleAthkarHabit("MORNING", enabled)
-                            },
-                            onOpenReader = {
-                                activeAthkarCategory = "MORNING"
-                            }
-                        )
+                        // 1. بطاقة أذكار الصباح
+                        if (visibleAthkarCategories.contains("MORNING")) {
+                            HeroAthkarCategoryCard(
+                                title = "أذكار الصباح",
+                                subtitle = "١٣ ذكراً مأثوراً لحفظ اليوم والبركة والنشاط",
+                                isMorning = true,
+                                icon = Icons.Default.WbSunny,
+                                iconColor = GoldWarm,
+                                iconBgColor = GoldSoft.copy(alpha = 0.25f),
+                                isCompletedToday = morningLog?.isCompleted == true,
+                                isHabitEnabled = isMorningHabitOn,
+                                onToggleHabit = { enabled ->
+                                    viewModel.toggleAthkarHabit("MORNING", enabled)
+                                },
+                                onOpenReader = {
+                                    activeAthkarCategory = "MORNING"
+                                }
+                            )
+                        }
 
-                        // بطاقة أذكار المساء
-                        HeroAthkarCategoryCard(
-                            title = "أذكار المساء",
-                            subtitle = "١٣ ذكراً مأثوراً لتحصين النفس قبل الغروب وحفظ الليلة",
-                            isMorning = false,
-                            isCompletedToday = eveningLog?.isCompleted == true,
-                            isHabitEnabled = isEveningHabitOn,
-                            onToggleHabit = { enabled ->
-                                viewModel.toggleAthkarHabit("EVENING", enabled)
-                            },
-                            onOpenReader = {
-                                activeAthkarCategory = "EVENING"
-                            }
-                        )
+                        // 2. بطاقة أذكار المساء
+                        if (visibleAthkarCategories.contains("EVENING")) {
+                            HeroAthkarCategoryCard(
+                                title = "أذكار المساء",
+                                subtitle = "١٣ ذكراً مأثوراً لتحصين النفس قبل الغروب وحفظ الليلة",
+                                isMorning = false,
+                                icon = Icons.Default.NightlightRound,
+                                iconColor = Color(0xFF818CF8),
+                                iconBgColor = Color(0xFF6366F1).copy(alpha = 0.2f),
+                                isCompletedToday = eveningLog?.isCompleted == true,
+                                isHabitEnabled = isEveningHabitOn,
+                                onToggleHabit = { enabled ->
+                                    viewModel.toggleAthkarHabit("EVENING", enabled)
+                                },
+                                onOpenReader = {
+                                    activeAthkarCategory = "EVENING"
+                                }
+                            )
+                        }
 
-                        // باقي الأذكار (أذكار بعد الصلاة، أذكار النوم)
-                        val otherAzkar = uiState.todayAzkarLogs.filter { it.categoryCode != "MORNING" && it.categoryCode != "EVENING" }
+                        // 3. بطاقة أذكار بعد الصلاة المكتوبة
+                        if (visibleAthkarCategories.contains("AFTER_PRAYER")) {
+                            HeroAthkarCategoryCard(
+                                title = "أذكار بعد الصلاة",
+                                subtitle = "٧ أذكار نبوية مأثورة دبر كل صلاة مكتوبة",
+                                isMorning = true,
+                                icon = Icons.Default.Mosque,
+                                iconColor = EmeraldDeep,
+                                iconBgColor = EmeraldDeep.copy(alpha = 0.15f),
+                                isCompletedToday = afterPrayerLog?.isCompleted == true,
+                                isHabitEnabled = isAfterPrayerHabitOn,
+                                onToggleHabit = { enabled ->
+                                    viewModel.toggleAthkarHabit("AFTER_PRAYER", enabled)
+                                },
+                                onOpenReader = {
+                                    activeAthkarCategory = "AFTER_PRAYER"
+                                }
+                            )
+                        }
+
+                        // 4. بطاقة أذكار النوم
+                        if (visibleAthkarCategories.contains("SLEEP")) {
+                            HeroAthkarCategoryCard(
+                                title = "أذكار النوم",
+                                subtitle = "٧ أذكار نبوية شريفة قبل النوم للتحصين والسكينة",
+                                isMorning = false,
+                                icon = Icons.Default.Bedtime,
+                                iconColor = Color(0xFFF59E0B),
+                                iconBgColor = Color(0xFFF59E0B).copy(alpha = 0.18f),
+                                isCompletedToday = sleepLog?.isCompleted == true,
+                                isHabitEnabled = isSleepHabitOn,
+                                onToggleHabit = { enabled ->
+                                    viewModel.toggleAthkarHabit("SLEEP", enabled)
+                                },
+                                onOpenReader = {
+                                    activeAthkarCategory = "SLEEP"
+                                }
+                            )
+                        }
+
+                        // باقي الأذكار الحرة
+                        val otherAzkar = uiState.todayAzkarLogs.filter {
+                            it.categoryCode != "MORNING" && it.categoryCode != "EVENING" && it.categoryCode != "AFTER_PRAYER" && it.categoryCode != "SLEEP"
+                        }
                         if (otherAzkar.isNotEmpty()) {
                             Text(
                                 text = "أبواب الذكر والتسبيح الأخرى",
@@ -787,8 +804,14 @@ fun PrayerScreen(
 
     if (activeAthkarCategory != null) {
         val catCode = activeAthkarCategory!!
-        val catTitle = if (catCode == "MORNING") "أذكار الصباح" else "أذكار المساء"
-        val dhikrList = if (catCode == "MORNING") AthkarDataProvider.morningAthkar else AthkarDataProvider.eveningAthkar
+        val catTitle = when (catCode) {
+            "MORNING" -> "أذكار الصباح"
+            "EVENING" -> "أذكار المساء"
+            "AFTER_PRAYER" -> "أذكار بعد الصلاة"
+            "SLEEP" -> "أذكار النوم"
+            else -> "الأذكار المأثورة"
+        }
+        val dhikrList = AthkarDataProvider.getAthkarByCategory(catCode)
 
         InteractiveAthkarReaderDialog(
             categoryCode = catCode,
@@ -802,6 +825,109 @@ fun PrayerScreen(
                 activeAthkarCategory = null
             }
         )
+    }
+
+    // نافذة تخصيص الأذكار التي تظهر للمستخدم
+    if (showCustomizeAthkarDialog) {
+        Dialog(
+            onDismissRequest = { showCustomizeAthkarDialog = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .wrapContentHeight(),
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 6.dp
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "تخصيص الأذكار المعروضة",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        IconButton(onClick = { showCustomizeAthkarDialog = false }) {
+                            Icon(Icons.Default.Close, contentDescription = "إغلاق")
+                        }
+                    }
+
+                    Text(
+                        text = "اختر أبواب الأذكار التي ترغب في ظهورها في قائمتك اليومية:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    val categoriesOptions = listOf(
+                        Triple("MORNING", "أذكار الصباح", "١٣ ذكراً مأثوراً لحفظ اليوم"),
+                        Triple("EVENING", "أذكار المساء", "١٣ ذكراً مأثوراً لحفظ الليلة"),
+                        Triple("AFTER_PRAYER", "أذكار بعد الصلاة", "الأذكار والتسبيحات دبر الصلوات الخمس"),
+                        Triple("SLEEP", "أذكار النوم", "الأذكار والتحصينات النبوية عند المنام")
+                    )
+
+                    categoriesOptions.forEach { (code, title, desc) ->
+                        val isChecked = visibleAthkarCategories.contains(code)
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    visibleAthkarCategories = if (isChecked) {
+                                        if (visibleAthkarCategories.size > 1) visibleAthkarCategories - code else visibleAthkarCategories
+                                    } else {
+                                        visibleAthkarCategories + code
+                                    }
+                                },
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isChecked) EmeraldDeep.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                            ),
+                            border = if (isChecked) androidx.compose.foundation.BorderStroke(1.dp, EmeraldDeep) else null
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(text = title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    Text(text = desc, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Switch(
+                                    checked = isChecked,
+                                    onCheckedChange = { checked ->
+                                        visibleAthkarCategories = if (checked) {
+                                            visibleAthkarCategories + code
+                                        } else {
+                                            if (visibleAthkarCategories.size > 1) visibleAthkarCategories - code else visibleAthkarCategories
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    Button(
+                        onClick = { showCustomizeAthkarDialog = false },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text("تم وحفظ الاختيارات", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
     }
 
     if (showMapPickerDialog) {
@@ -863,7 +989,10 @@ fun PrayerScreen(
 private fun HeroAthkarCategoryCard(
     title: String,
     subtitle: String,
-    isMorning: Boolean,
+    isMorning: Boolean = true,
+    icon: androidx.compose.ui.graphics.vector.ImageVector = if (isMorning) Icons.Default.WbSunny else Icons.Default.NightlightRound,
+    iconColor: Color = if (isMorning) GoldWarm else Color(0xFF818CF8),
+    iconBgColor: Color = if (isMorning) GoldSoft.copy(alpha = 0.25f) else Color(0xFF6366F1).copy(alpha = 0.2f),
     isCompletedToday: Boolean,
     isHabitEnabled: Boolean,
     onToggleHabit: (Boolean) -> Unit,
@@ -898,14 +1027,14 @@ private fun HeroAthkarCategoryCard(
                 ) {
                     Surface(
                         shape = CircleShape,
-                        color = if (isMorning) GoldSoft.copy(alpha = 0.25f) else Color(0xFF6366F1).copy(alpha = 0.2f),
+                        color = iconBgColor,
                         modifier = Modifier.size(46.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
-                                imageVector = if (isMorning) Icons.Default.WbSunny else Icons.Default.NightlightRound,
+                                imageVector = icon,
                                 contentDescription = null,
-                                tint = if (isMorning) GoldWarm else Color(0xFF818CF8),
+                                tint = iconColor,
                                 modifier = Modifier.size(24.dp)
                             )
                         }
@@ -927,7 +1056,7 @@ private fun HeroAthkarCategoryCard(
                                     color = EmeraldDeep.copy(alpha = 0.15f)
                                 ) {
                                     Text(
-                                        text = "مكتملة اليوم ✓",
+                                        text = "مكتملة اليوم",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = EmeraldDeep,
                                         fontWeight = FontWeight.Bold,
@@ -970,7 +1099,7 @@ private fun HeroAthkarCategoryCard(
                     )
                     Column {
                         Text(
-                            text = "تتبع كعادة يومية في صفحة العادات 🌟",
+                            text = "تتبع كعادة يومية في صفحة العادات",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -1004,7 +1133,7 @@ private fun HeroAthkarCategoryCard(
                 Icon(Icons.Default.MenuBook, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = if (isCompletedToday) "إعادة قراءة $title 📖" else "ابدأ قراءة $title الآن 📖",
+                    text = if (isCompletedToday) "إعادة قراءة $title" else "ابدأ قراءة $title الآن",
                     fontWeight = FontWeight.ExtraBold
                 )
             }
@@ -1013,7 +1142,7 @@ private fun HeroAthkarCategoryCard(
 }
 
 @Composable
-private fun MosqueLocationsSectionCard(
+fun MosqueLocationsSectionCard(
     mosques: List<MosqueLocationEntity>,
     hasLocationPermission: Boolean,
     onRequestPermission: () -> Unit,
@@ -1186,7 +1315,7 @@ private object SlippyTileCache {
  * - تعرض موقع المستخدم الحالي (نقطة زرقاء) وموقع المسجد المختار والمسافة الفعلية بينهما بالمتر
  */
 @Composable
-private fun InteractiveMosqueMapPickerDialog(
+fun InteractiveMosqueMapPickerDialog(
     userLat: Double,
     userLng: Double,
     existingMosques: List<MosqueLocationEntity>,
@@ -1857,129 +1986,44 @@ fun PrayerSquareCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isPrayedOnTime = status == "ON_TIME"
-    val isLate = status == "LATE"
+    val isDone = status == "ON_TIME" || status == "DONE" || status == "PRAYED"
 
     Card(
         modifier = modifier
-            .aspectRatio(0.92f)
+            .height(48.dp)
             .clickable(onClick = onClick)
             .testTag("prayer_square_${prayerType.id}"),
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(
-            containerColor = when {
-                isNext -> EmeraldDeep.copy(alpha = 0.12f)
-                isPrayedOnTime -> MintAccent.copy(alpha = 0.14f)
-                isLate -> PriorityHighRed.copy(alpha = 0.10f)
-                else -> MaterialTheme.colorScheme.surface
-            }
+            containerColor = if (isDone) MintAccent.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceContainerLow
         ),
         border = androidx.compose.foundation.BorderStroke(
-            width = if (isNext) 2.dp else 1.dp,
-            color = when {
-                isNext -> EmeraldDeep
-                isPrayedOnTime -> MintAccent
-                isLate -> PriorityHighRed
-                else -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
-            }
+            width = if (isDone) 1.5.dp else 1.dp,
+            color = if (isDone) MintAccent else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
         )
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(8.dp),
-            verticalArrangement = Arrangement.SpaceBetween,
+                .padding(horizontal = 2.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // الصف العلوي داخل المربع: أيقونة الصلاة وجرس التنبيه
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = when (prayerType) {
-                        PrayerType.FAJR -> Icons.Default.WbTwilight
-                        PrayerType.SUNRISE -> Icons.Default.WbSunny
-                        PrayerType.DHUHR -> Icons.Default.LightMode
-                        PrayerType.ASR -> Icons.Default.Brightness5
-                        PrayerType.MAGHRIB -> Icons.Default.NightsStay
-                        PrayerType.ISHA -> Icons.Default.DarkMode
-                        else -> Icons.Default.Schedule
-                    },
-                    contentDescription = null,
-                    tint = if (isNext) EmeraldDeep else MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
-                )
-
-                Icon(
-                    imageVector = when (bellMode) {
-                        com.example.core.prayer.PrayerBellMode.AZAN -> Icons.Default.NotificationsActive
-                        com.example.core.prayer.PrayerBellMode.VIBRATE -> Icons.Default.Vibration
-                        com.example.core.prayer.PrayerBellMode.SILENT -> Icons.Default.NotificationsOff
-                    },
-                    contentDescription = bellMode.arabicTitle,
-                    tint = when (bellMode) {
-                        com.example.core.prayer.PrayerBellMode.AZAN -> GoldSoft
-                        com.example.core.prayer.PrayerBellMode.VIBRATE -> MaterialTheme.colorScheme.primary
-                        com.example.core.prayer.PrayerBellMode.SILENT -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                    },
-                    modifier = Modifier.size(15.dp)
-                )
-            }
-
-            // اسم الصلاة والوقت
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                Text(
-                    text = prayerType.arabicName,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = if (isNext) EmeraldDeep else MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = timeFormatted.substringBefore(" "),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = if (timeFormatted.contains("ص")) "صباحاً" else "مساءً",
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            // شارة الحالة السفلية
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = when {
-                    isPrayedOnTime -> MintAccent.copy(alpha = 0.20f)
-                    isLate -> PriorityHighRed.copy(alpha = 0.18f)
-                    isNext -> EmeraldDeep
-                    else -> MaterialTheme.colorScheme.surfaceVariant
-                }
-            ) {
-                Text(
-                    text = when {
-                        isPrayedOnTime -> "تمت ✅"
-                        isLate -> "متأخر ⚠️"
-                        isNext -> "القادمة"
-                        else -> "قادمة"
-                    },
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                    fontWeight = FontWeight.Bold,
-                    color = when {
-                        isPrayedOnTime -> EmeraldDeep
-                        isLate -> PriorityHighRed
-                        isNext -> Color.White
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                )
-            }
+            Text(
+                text = prayerType.arabicName,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                fontWeight = FontWeight.ExtraBold,
+                color = if (isDone) MintAccent else MaterialTheme.colorScheme.onSurface,
+                maxLines = 1
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = timeFormatted,
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
+                fontWeight = FontWeight.Bold,
+                color = if (isDone) MintAccent else MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
+            )
         }
     }
 }

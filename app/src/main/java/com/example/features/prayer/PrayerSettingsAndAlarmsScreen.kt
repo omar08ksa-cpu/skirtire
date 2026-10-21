@@ -1,6 +1,11 @@
 package com.example.features.prayer
 
+import android.Manifest
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -9,6 +14,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
@@ -51,8 +58,26 @@ fun PrayerSettingsAndAlarmsScreen(
 ) {
     BackHandler { onBack() }
 
+    val context = LocalContext.current
+    var settingsTab by rememberSaveable { mutableIntStateOf(0) } // 0=مواقيت وتنبيهات الصلوات، 1=المنبهات والتذكيرات والضبط
     var showAddCustomAlarmDialog by remember { mutableStateOf(false) }
     var selectedMuazzinPickerPrayer by remember { mutableStateOf<PrayerType?>(null) }
+    var showMapPickerDialog by remember { mutableStateOf(false) }
+
+    var hasLocationPermission by remember {
+        mutableStateOf(MosqueLocationVerifier.hasLocationPermission(context))
+    }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { perms ->
+        val granted = perms[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            perms[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        hasLocationPermission = granted
+        if (granted) {
+            viewModel.autoVerifyMosqueInBackground()
+        }
+    }
 
     val schedule = uiState.prayerSchedule
     val displayPrayers = listOf(
@@ -66,456 +91,487 @@ fun PrayerSettingsAndAlarmsScreen(
         PrayerType.LAST_THIRD
     )
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        "الضبط والمنبهات",
-                        fontWeight = FontWeight.ExtraBold,
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                },
-                navigationIcon = {
-                    IconButton(
-                        onClick = onBack,
-                        modifier = Modifier.testTag("prayer_settings_back_btn")
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "رجوع"
-                        )
-                    }
-                },
-                actions = {
-                    FilledTonalButton(
-                        onClick = { showAddCustomAlarmDialog = true },
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        modifier = Modifier
-                            .padding(end = 8.dp)
-                            .testTag("add_custom_prayer_alarm_top_btn")
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("منبه مخصص", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
-            )
-        },
+    Column(
         modifier = modifier
-    ) { innerPadding ->
-        LazyColumn(
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        // شريط علوي ملتصق بأعلى الشاشة بدون مساحة فارغة
+        Row(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .testTag("prayer_settings_scroll_list"),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 48.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // بطاقة توضيحية لسهولة التحكم
-            item {
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = EmeraldDeep.copy(alpha = 0.08f),
-                    border = CardDefaults.outlinedCardBorder()
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier
+                    .size(36.dp)
+                    .testTag("prayer_settings_back_btn")
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "رجوع"
+                )
+            }
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                "الضبط والمنبهات",
+                fontWeight = FontWeight.ExtraBold,
+                style = MaterialTheme.typography.titleLarge
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            if (settingsTab == 1) {
+                FilledTonalButton(
+                    onClick = { showAddCustomAlarmDialog = true },
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    modifier = Modifier.testTag("add_custom_prayer_alarm_top_btn")
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Tune,
-                            contentDescription = null,
-                            tint = EmeraldDeep,
-                            modifier = Modifier.size(24.dp)
-                        )
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("منبه مخصص", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+            }
+        }
+
+        Column(
+            modifier = Modifier.fillMaxSize()
+        ) {
+            // شريط التبديل بين القسمين المطلوبين: مواقيت وتنبيهات الصلاة / المنبهات والتذكيرات والضبط
+            SingleChoiceSegmentedButtonRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                    .testTag("prayer_settings_tabs_row")
+            ) {
+                SegmentedButton(
+                    selected = settingsTab == 0,
+                    onClick = { settingsTab = 0 },
+                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                ) {
+                    Text("مواقيت وتنبيهات الصلاة", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+                SegmentedButton(
+                    selected = settingsTab == 1,
+                    onClick = { settingsTab = 1 },
+                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                ) {
+                    Text("المنبهات والتذكيرات والضبط", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+            }
+
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .weight(1f)
+                    .testTag("prayer_settings_scroll_list"),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 48.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                if (settingsTab == 0) {
+                    // القسم الأول: مواقيت وتنبيهات الصلوات لحالها (تمت إزالة صندوق التحكم في نوع التنبيه)
+                    item {
                         Text(
-                            text = "تحكّم في نوع التنبيه لكل صلاة وصوت المؤذن، أو أنشئ تنبيهات مسبقة قبل الأذان أو بعده.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            text = "مواقيت وتنبيهات الصلوات",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
-                }
-            }
 
-            // قائمة الصلوات العامودية
-            item {
-                Text(
-                    text = "مواقيت وتنبيهات الصلوات",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
+                    items(displayPrayers, key = { it.id }) { prayerType ->
+                        val slot = schedule.prayers.find { it.type == prayerType }
+                        val currentBellMode = uiState.prayerBellModesMap[prayerType] ?: if (prayerType.isObligatory) PrayerBellMode.AZAN else PrayerBellMode.SILENT
+                        val isOverrideSilent = uiState.prayerOverrideSilentMap[prayerType] ?: false
+                        val selectedVoiceId = uiState.prayerMuazzinMap[prayerType] ?: "makkah"
+                        val voice = MuazzinCatalog.findVoiceById(selectedVoiceId)
 
-            items(displayPrayers, key = { it.id }) { prayerType ->
-                val slot = schedule.prayers.find { it.type == prayerType }
-                val currentBellMode = uiState.prayerBellModesMap[prayerType] ?: if (prayerType.isObligatory) PrayerBellMode.AZAN else PrayerBellMode.SILENT
-                val isOverrideSilent = uiState.prayerOverrideSilentMap[prayerType] ?: false
-                val selectedVoiceId = uiState.prayerMuazzinMap[prayerType] ?: "makkah"
-                val voice = MuazzinCatalog.findVoiceById(selectedVoiceId)
-
-                PrayerSettingRowCard(
-                    prayerType = prayerType,
-                    timeFormatted = slot?.formatted12h ?: "--:--",
-                    bellMode = currentBellMode,
-                    overrideSilent = isOverrideSilent,
-                    muazzinVoice = voice,
-                    onBellModeChange = { nextMode ->
-                        viewModel.setPrayerBellMode(prayerType, nextMode)
-                    },
-                    onOverrideSilentChange = { nextOverride ->
-                        viewModel.setPrayerOverrideSilent(prayerType, nextOverride)
-                    },
-                    onSelectMuazzinClick = {
-                        selectedMuazzinPickerPrayer = prayerType
+                        PrayerSettingRowCard(
+                            prayerType = prayerType,
+                            timeFormatted = slot?.formatted12h ?: "--:--",
+                            bellMode = currentBellMode,
+                            overrideSilent = isOverrideSilent,
+                            muazzinVoice = voice,
+                            onBellModeChange = { nextMode ->
+                                viewModel.setPrayerBellMode(prayerType, nextMode)
+                            },
+                            onOverrideSilentChange = { nextOverride ->
+                                viewModel.setPrayerOverrideSilent(prayerType, nextOverride)
+                            },
+                            onSelectMuazzinClick = {
+                                selectedMuazzinPickerPrayer = prayerType
+                            }
+                        )
                     }
-                )
-            }
-
-            // المنبهات المخصصة
-            item {
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "المنبهات والتذكيرات المخصصة",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    TextButton(onClick = { showAddCustomAlarmDialog = true }) {
-                        Icon(Icons.Default.AddCircleOutline, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("إضافة", fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-
-            if (uiState.customPrayerAlarms.isEmpty()) {
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(Icons.Default.AlarmAdd, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            Text("لا توجد منبهات مخصصة بعد", fontWeight = FontWeight.Bold)
-                            Text(
-                                "اضغط «إضافة» لجدولة منبه قبل الفجر أو بعد المغرب بدقائق محددة لأيام معينة.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            } else {
-                items(uiState.customPrayerAlarms, key = { it.id }) { customAlarm ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
+                } else {
+                    // القسم الثاني: المنبهات والتذكيرات المخصصة وباقي المنبهات والضبط
+                    item {
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(14.dp),
+                            modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "المنبهات والتذكيرات المخصصة",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            TextButton(onClick = { showAddCustomAlarmDialog = true }) {
+                                Icon(Icons.Default.AddCircleOutline, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("إضافة", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    if (uiState.customPrayerAlarms.isEmpty()) {
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(Icons.Default.AlarmAdd, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                    Text("لا توجد منبهات مخصصة بعد", fontWeight = FontWeight.Bold)
+                                    Text(
+                                        "اضغط «إضافة» لجدولة منبه قبل الفجر أو بعد المغرب بدقائق محددة لأيام معينة.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        items(uiState.customPrayerAlarms, key = { it.id }) { customAlarm ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(14.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(
+                                            text = customAlarm.name,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "${customAlarm.timingFormatted} • ${customAlarm.prayersFormatted}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = "الأيام: ${customAlarm.daysFormatted} • الصوت: ${customAlarm.soundType}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = EmeraldDeep
+                                        )
+                                    }
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Switch(
+                                            checked = customAlarm.isEnabled,
+                                            onCheckedChange = { viewModel.toggleCustomPrayerAlarm(customAlarm.id) }
+                                        )
+                                        IconButton(onClick = { viewModel.deleteCustomPrayerAlarm(customAlarm.id) }) {
+                                            Icon(
+                                                imageVector = Icons.Default.DeleteOutline,
+                                                contentDescription = "حذف",
+                                                tint = PriorityHighRed
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // ميزات وتنبيهات الأوقات الخاصة
+                    item {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "منبهات الأوقات والسنن النبوية",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(18.dp)
                         ) {
                             Column(
-                                modifier = Modifier.weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                Text(
-                                    text = customAlarm.name,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "${customAlarm.timingFormatted} • ${customAlarm.prayersFormatted}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = "الأيام: ${customAlarm.daysFormatted} • الصوت: ${customAlarm.soundType}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = EmeraldDeep
-                                )
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Switch(
-                                    checked = customAlarm.isEnabled,
-                                    onCheckedChange = { viewModel.toggleCustomPrayerAlarm(customAlarm.id) }
-                                )
-                                IconButton(onClick = { viewModel.deleteCustomPrayerAlarm(customAlarm.id) }) {
-                                    Icon(
-                                        imageVector = Icons.Default.DeleteOutline,
-                                        contentDescription = "حذف",
-                                        tint = PriorityHighRed
+                                // منبه خروج وقت الصلاة
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("تنبيه قرب خروج وقت الصلاة", fontWeight = FontWeight.Bold)
+                                        Text("تذكير قبل خروج وقت الصلاة بـ 15 دقيقة لتداركها", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    Switch(
+                                        checked = uiState.prayerEndTimeAlarmEnabled,
+                                        onCheckedChange = { viewModel.togglePrayerEndTimeAlarm() }
+                                    )
+                                }
+
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                                // منبه منتصف الليل
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("منبه منتصف الليل الشرعي", fontWeight = FontWeight.Bold)
+                                        Text("تنبيه بانتهاء وقت العشاء الاختياري", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    Switch(
+                                        checked = uiState.midnightAlarmEnabled,
+                                        onCheckedChange = { viewModel.toggleMidnightAlarm() }
+                                    )
+                                }
+
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                                // منبه الثلث الأخير من الليل (قيام الليل)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("منبه الثلث الأخير من الليل", fontWeight = FontWeight.Bold)
+                                        Text("للاستيقاظ لقيام الليل والوتر والاستغفار بالأسحار", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    Switch(
+                                        checked = uiState.lastThirdAlarmEnabled,
+                                        onCheckedChange = { viewModel.toggleLastThirdAlarm() }
                                     )
                                 }
                             }
                         }
                     }
-                }
-            }
 
-            // ميزات وتنبيهات الأوقات الخاصة
-            item {
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = "منبهات الأوقات والسنن النبوية",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        // منبه خروج وقت الصلاة
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("تنبيه قرب خروج وقت الصلاة", fontWeight = FontWeight.Bold)
-                                Text("تذكير قبل خروج وقت الصلاة بـ 15 دقيقة لتداركها", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Switch(
-                                checked = uiState.prayerEndTimeAlarmEnabled,
-                                onCheckedChange = { viewModel.togglePrayerEndTimeAlarm() }
-                            )
-                        }
-
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                        // منبه منتصف الليل
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("منبه منتصف الليل الشرعي", fontWeight = FontWeight.Bold)
-                                Text("تنبيه بانتهاء وقت العشاء الاختياري", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Switch(
-                                checked = uiState.midnightAlarmEnabled,
-                                onCheckedChange = { viewModel.toggleMidnightAlarm() }
-                            )
-                        }
-
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                        // منبه الثلث الأخير من الليل (قيام الليل)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("منبه الثلث الأخير من الليل", fontWeight = FontWeight.Bold)
-                                Text("للاستيقاظ لقيام الليل والوتر والاستغفار بالأسحار", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Switch(
-                                checked = uiState.lastThirdAlarmEnabled,
-                                onCheckedChange = { viewModel.toggleLastThirdAlarm() }
-                            )
-                        }
+                    // إعدادات صلاة الجمعة
+                    item {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "إعدادات وسنن يوم الجمعة",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
-                }
-            }
 
-            // إعدادات صلاة الجمعة
-            item {
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = "إعدادات وسنن يوم الجمعة",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Row(
+                    item {
+                        Card(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            shape = RoundedCornerShape(18.dp)
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("صامت تلقائي أثناء خطبة وصلاة الجمعة", fontWeight = FontWeight.Bold)
-                                Text("تحويل الجوال لوضع الصامت تلقائياً منعاً للإحراج بالمسجد", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Switch(
-                                checked = uiState.fridaySilentEnabled,
-                                onCheckedChange = { viewModel.toggleFridaySilent() }
-                            )
-                        }
-
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("تذكير بآخر ساعة من يوم الجمعة", fontWeight = FontWeight.Bold)
-                                Text("التذكير بساعة الإجابة المباركة قبيل مغرب الجمعة", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Switch(
-                                checked = uiState.fridayLastHourReminderEnabled,
-                                onCheckedChange = { viewModel.toggleFridayLastHourReminder() }
-                            )
-                        }
-
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("تذكير قراءة سورة الكهف والتبكير", fontWeight = FontWeight.Bold)
-                                Text("تنبيه صباح الجمعة لنيل أجر التبكير وقراءة السورة", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Switch(
-                                checked = uiState.fridaySurahKahfReminderEnabled,
-                                onCheckedChange = { viewModel.toggleFridaySurahKahfReminder() }
-                            )
-                        }
-                    }
-                }
-            }
-
-            // إعدادات وضع الصامت عند الإقامة وقلب الجهاز
-            item {
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = "الإسكات الذكي والإشعارات",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        // إسكات الجوال وقت الإقامة
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("إسكات الجوال وقت الإقامة تلقائياً", fontWeight = FontWeight.Bold)
-                                Text("وضع الجوال على الصامت لمدة محددة عند بدء الصلاة", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Switch(
-                                checked = uiState.iqamaSilentEnabled,
-                                onCheckedChange = { viewModel.toggleIqamaSilent() }
-                            )
-                        }
-
-                        if (uiState.iqamaSilentEnabled) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                Text("مدة الصامت:", style = MaterialTheme.typography.labelMedium)
-                                listOf(15, 20, 30, 45).forEach { mins ->
-                                    FilterChip(
-                                        selected = uiState.iqamaSilentDurationMinutes == mins,
-                                        onClick = { viewModel.setIqamaSilentDuration(mins) },
-                                        label = { Text("$mins دقيقة") }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("صامت تلقائي أثناء خطبة وصلاة الجمعة", fontWeight = FontWeight.Bold)
+                                        Text("تحويل الجوال لوضع الصامت تلقائياً منعاً للإحراج بالمسجد", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    Switch(
+                                        checked = uiState.fridaySilentEnabled,
+                                        onCheckedChange = { viewModel.toggleFridaySilent() }
+                                    )
+                                }
+
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("تذكير بآخر ساعة من يوم الجمعة", fontWeight = FontWeight.Bold)
+                                        Text("التذكير بساعة الإجابة المباركة قبيل مغرب الجمعة", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    Switch(
+                                        checked = uiState.fridayLastHourReminderEnabled,
+                                        onCheckedChange = { viewModel.toggleFridayLastHourReminder() }
+                                    )
+                                }
+
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("تذكير قراءة سورة الكهف والتبكير", fontWeight = FontWeight.Bold)
+                                        Text("تنبيه صباح الجمعة لنيل أجر التبكير وقراءة السورة", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    Switch(
+                                        checked = uiState.fridaySurahKahfReminderEnabled,
+                                        onCheckedChange = { viewModel.toggleFridaySurahKahfReminder() }
                                     )
                                 }
                             }
                         }
+                    }
 
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    // إعدادات وضع الصامت عند الإقامة وقلب الجهاز
+                    item {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "الإسكات الذكي والإشعارات",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
 
-                        // إيقاف الأذان بقلب الجهاز
-                        Row(
+                    item {
+                        Card(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            shape = RoundedCornerShape(18.dp)
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("إيقاف أو كتم الأذان بقلب الجهاز", fontWeight = FontWeight.Bold)
-                                Text("اقلب شاشة الهاتف للأسفل لكتم نداء الأذان فوراً", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Switch(
-                                checked = uiState.flipToSnoozeAzanEnabled,
-                                onCheckedChange = { viewModel.toggleFlipToSnoozeAzan() }
-                            )
-                        }
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                // إسكات الجوال وقت الإقامة
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("إسكات الجوال وقت الإقامة تلقائياً", fontWeight = FontWeight.Bold)
+                                        Text("وضع الجوال على الصامت لمدة محددة عند بدء الصلاة", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    Switch(
+                                        checked = uiState.iqamaSilentEnabled,
+                                        onCheckedChange = { viewModel.toggleIqamaSilent() }
+                                    )
+                                }
 
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                                if (uiState.iqamaSilentEnabled) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("مدة الصامت:", style = MaterialTheme.typography.labelMedium)
+                                        // تمت إزالة خيار 30 دقيقة المقصوص بناءً على طلب المستخدم
+                                        listOf(15, 20, 45).forEach { mins ->
+                                            FilterChip(
+                                                selected = uiState.iqamaSilentDurationMinutes == mins,
+                                                onClick = { viewModel.setIqamaSilentDuration(mins) },
+                                                label = { Text("$mins دقيقة") }
+                                            )
+                                        }
+                                    }
+                                }
 
-                        // عداد الصلاة الدائم في لوحة الإشعارات
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("عداد الصلاة الدائم في الإشعارات", fontWeight = FontWeight.Bold)
-                                Text("إشعار دائم أعلى لوحة الإشعارات يعرض الوقت المتبقي", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                                // إيقاف الأذان بقلب الجهاز
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("إيقاف أو كتم الأذان بقلب الجهاز", fontWeight = FontWeight.Bold)
+                                        Text("اقلب شاشة الهاتف للأسفل لكتم نداء الأذان فوراً", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    Switch(
+                                        checked = uiState.flipToSnoozeAzanEnabled,
+                                        onCheckedChange = { viewModel.toggleFlipToSnoozeAzan() }
+                                    )
+                                }
+
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                                // عداد الصلاة الدائم في لوحة الإشعارات
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("عداد الصلاة الدائم في الإشعارات", fontWeight = FontWeight.Bold)
+                                        Text("إشعار دائم أعلى لوحة الإشعارات يعرض الوقت المتبقي", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    Switch(
+                                        checked = uiState.persistentPrayerNotificationEnabled,
+                                        onCheckedChange = { viewModel.togglePersistentPrayerNotification() }
+                                    )
+                                }
                             }
-                            Switch(
-                                checked = uiState.persistentPrayerNotificationEnabled,
-                                onCheckedChange = { viewModel.togglePersistentPrayerNotification() }
-                            )
                         }
+                    }
+
+                    // قسم المساجد المعتمدة (تم نقله إلى الإعدادات بناءً على طلب المستخدم)
+                    item {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        MosqueLocationsSectionCard(
+                            mosques = uiState.mosqueLocations,
+                            hasLocationPermission = hasLocationPermission,
+                            onRequestPermission = {
+                                locationPermissionLauncher.launch(
+                                    arrayOf(
+                                        Manifest.permission.ACCESS_FINE_LOCATION,
+                                        Manifest.permission.ACCESS_COARSE_LOCATION
+                                    )
+                                )
+                            },
+                            onOpenMapPicker = { showMapPickerDialog = true },
+                            onDeleteMosque = { viewModel.deleteMosqueLocation(it) },
+                            onOpenInGoogleMaps = { mosque ->
+                                try {
+                                    val uri = Uri.parse("geo:${mosque.latitude},${mosque.longitude}?q=${mosque.latitude},${mosque.longitude}(${Uri.encode(mosque.name)})")
+                                    val mapIntent = Intent(Intent.ACTION_VIEW, uri).apply {
+                                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                    }
+                                    context.startActivity(mapIntent)
+                                } catch (_: Exception) {
+                                }
+                            }
+                        )
                     }
                 }
             }
@@ -664,22 +720,24 @@ fun PrayerSettingRowCard(
                 }
             }
 
-            // خيار: العمل حتى لو كان الجوال صامت
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "العمل حتى لو كان الجوال صامت",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Switch(
-                    checked = overrideSilent,
-                    onCheckedChange = onOverrideSilentChange,
-                    modifier = Modifier.scaleSwitch()
-                )
+            // خيار: العمل حتى لو كان الجوال صامت (مخفي عند اختيار وضع صامت)
+            if (bellMode != PrayerBellMode.SILENT) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "العمل حتى لو كان الجوال صامت",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Switch(
+                        checked = overrideSilent,
+                        onCheckedChange = onOverrideSilentChange,
+                        modifier = Modifier.scaleSwitch()
+                    )
+                }
             }
 
             // خيار: اسم صوت الأذان / المؤذن

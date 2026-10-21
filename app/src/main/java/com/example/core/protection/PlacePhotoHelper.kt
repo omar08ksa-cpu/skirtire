@@ -27,7 +27,7 @@ object PlacePhotoHelper {
 
     private const val DEFAULT_REFERENCE_FILE_NAME = "wake_reference_place.png"
     private const val TARGET_GRID = 64 // دقة 64x64 بكسل (4096 نقطة فحص)
-    private const val STRICT_PASS_THRESHOLD = 72 // نسبة المطابقة الدنيا المطلوبة
+    private const val STRICT_PASS_THRESHOLD = 55 // نسبة المطابقة الدنيا المطلوبة
 
     private fun getFileNameForAlarm(alarmId: String?): String {
         return if (!alarmId.isNullOrBlank()) {
@@ -232,10 +232,9 @@ object PlacePhotoHelper {
         val isMatch = combinedScore >= STRICT_PASS_THRESHOLD
 
         val feedback = when {
-            isMatch -> "تطابق ممتاز بنسبة $combinedScore% ✅ تم إيقاف المنبه بنجاح"
-            combinedScore in 60..71 -> "اقتربت جداً ($combinedScore% / المطلوب $STRICT_PASS_THRESHOLD%) — اضبط زاوية الهاتف وثبّته باتجاه المعالم المرجعية"
-            combinedScore in 30..59 -> "المكان مختلف أو زاوية الكاميرا بعيدة ($combinedScore% / المطلوب $STRICT_PASS_THRESHOLD%) — توجه لمكان المنبه"
-            else -> "الصورة غير مطابقة إطلاقاً ($combinedScore%) — يرجى التوجه لمكان المنبه المحدد"
+            isMatch -> "تم التحقق بنجاح بنسبة تطابق $combinedScore% وتم إيقاف المنبه"
+            combinedScore in 45 until STRICT_PASS_THRESHOLD -> "اقتربت جدا ($combinedScore% / المطلوب $STRICT_PASS_THRESHOLD%) - اضبط زاوية الهاتف وثبته باتجاه المكان"
+            else -> "المكان مختلف أو زاوية الكاميرا بعيدة ($combinedScore% / المطلوب $STRICT_PASS_THRESHOLD%) - توجه لمكان المنبه المحدد"
         }
 
         return PlaceMatchResult(

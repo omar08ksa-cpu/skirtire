@@ -25,11 +25,13 @@ import com.example.core.prayer.PrayerType
 object AdhanNotificationHelper {
 
     const val ADHAN_CHANNEL_ID = "adhan_exact_channel_v1"
+    const val ADHAN_SILENT_CHANNEL_ID = "adhan_silent_channel_v1"
     const val COUNTDOWN_CHANNEL_ID = "prayer_countdown_channel_v1"
 
     const val EXTRA_PRAYER_ID = "extra_prayer_id"
     const val EXTRA_CITY_NAME = "extra_city_name"
     const val EXTRA_IS_TEST = "extra_is_test"
+    const val EXTRA_BELL_MODE = "extra_bell_mode"
     const val EXTRA_REMINDER_ID = "extra_reminder_id"
     const val EXTRA_REMINDER_TITLE = "extra_reminder_title"
     const val EXTRA_REMINDER_IS_HABIT = "extra_reminder_is_habit"
@@ -55,6 +57,18 @@ object AdhanNotificationHelper {
                 lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
             }
 
+            val silentChannel = NotificationChannel(
+                ADHAN_SILENT_CHANNEL_ID,
+                "تنبيهات الصلاة الصامتة",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "إشعار مرئي صامت تماماً بدون صوت أو اهتزاز عند دخول وقت الصلاة"
+                enableVibration(false)
+                setSound(null, null)
+                setShowBadge(true)
+                lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
+            }
+
             val countdownChannel = NotificationChannel(
                 COUNTDOWN_CHANNEL_ID,
                 "العدّاد التنازلي للصلاة القادمة",
@@ -65,12 +79,13 @@ object AdhanNotificationHelper {
             }
 
             manager.createNotificationChannel(adhanChannel)
+            manager.createNotificationChannel(silentChannel)
             manager.createNotificationChannel(countdownChannel)
         }
     }
 
     /**
-     * إظهار أو تحديث إشعار عداد الصلاة الدائم في لوحة الإشعارات
+     * إظهار أو تحديث إشعار عداد الصلاة الدائم في لوحة الإشعارات بتصميم مدمج وأنيق
      */
     fun showOrUpdatePersistentPrayerCountdownNotification(
         context: Context,
@@ -95,13 +110,28 @@ object AdhanNotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val title = "باقي على صلاة ${schedule.nextPrayer.type.arabicName}: ${schedule.countdownFormatted}"
-        val content = "الموعد: ${schedule.nextPrayer.formatted12h} • ${schedule.city.arabicName} (${schedule.hijriFormatted})"
+        val nextPrayerName = schedule.nextPrayer.type.arabicName
+        val remainingCountdown = schedule.countdownFormatted
+        val exactPrayerTime = schedule.nextPrayer.formatted12h
+        val currentDate = "${schedule.hijriFormatted} • ${schedule.dateKey}"
+
+        // تصميم منظم، مدمج وعالي التباين
+        val title = "صلاة $nextPrayerName • المتبقي: $remainingCountdown"
+        val lineDetails = "الموعد: $exactPrayerTime | التاريخ: $currentDate"
+        val bigSummary = buildString {
+            append("الصلاة القادمة: صلاة ").append(nextPrayerName).append("\n")
+            append("الوقت المتبقي: ").append(remainingCountdown).append("\n")
+            append("موعد الأذان: ").append(exactPrayerTime).append("\n")
+            append("التاريخ: ").append(currentDate)
+        }
 
         val notification = NotificationCompat.Builder(context, COUNTDOWN_CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title)
-            .setContentText(content)
+            .setContentText(lineDetails)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(bigSummary))
+            .setSubText("مواقيت الصلاة")
+            .setColor(0xFF059669.toInt())
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -140,19 +170,42 @@ object AdhanNotificationHelper {
         }
     }
 
+    fun getEffectiveBellMode(
+        context: Context,
+        prayerType: PrayerType,
+        explicitBellMode: String? = null
+    ): com.example.core.prayer.PrayerBellMode {
+        val prefs = context.getSharedPreferences("prayer_alarm_prefs", Context.MODE_PRIVATE)
+        val saved = prefs.getString("prayer_bell_${prayerType.id}", null)
+        if (saved != null) {
+            return com.example.core.prayer.PrayerBellMode.fromId(saved)
+        }
+        if (!explicitBellMode.isNullOrBlank()) {
+            return com.example.core.prayer.PrayerBellMode.fromId(explicitBellMode)
+        }
+        return if (prayerType.isObligatory) com.example.core.prayer.PrayerBellMode.AZAN else com.example.core.prayer.PrayerBellMode.SILENT
+    }
+
     /**
-     * إظهار إشعار الأذان بشاشة كاملة/أولوية قصوى مع زر "صليت ✅" لتسجيلها كعادة مباشرة
+     * إظهار إشعار الأذان مع دعم الوضع الصامت التام وزر صليت لتسجيلها كعادة مباشرة
      */
     fun showAdhanNotification(
         context: Context,
         prayerType: PrayerType,
         cityName: String,
-        isTest: Boolean = false
+        isTest: Boolean = false,
+        explicitBellMode: String? = null
     ) {
         ensureChannelsCreated(context)
 
-        // تشغيل نغمة تنبيه مسموعة بدون إنترنت
-        playOfflineAdhanChime(context)
+        val bellMode = getEffectiveBellMode(context, prayerType, explicitBellMode)
+
+        // إنفاذ فحص الوضع الصامت: منع تشغيل أي صوت أو نغمة إطلاقاً عند اختيار صامت
+        if (bellMode != com.example.core.prayer.PrayerBellMode.SILENT && bellMode != com.example.core.prayer.PrayerBellMode.VIBRATE) {
+            if (bellMode == com.example.core.prayer.PrayerBellMode.AZAN) {
+                playOfflineAdhanChime(context)
+            }
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val granted = ContextCompat.checkSelfPermission(
@@ -173,7 +226,7 @@ object AdhanNotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // زر "صليت ✅" داخل الإشعار نفسه
+        // زر "صليت" داخل الإشعار نفسه
         val prayedActionIntent = Intent(context, PrayerActionReceiver::class.java).apply {
             putExtra(EXTRA_PRAYER_ID, prayerType.id)
             putExtra(EXTRA_CITY_NAME, cityName)
@@ -186,36 +239,54 @@ object AdhanNotificationHelper {
         )
 
         val titleText = if (isTest) {
-            "🕌 تجربة أذان ${prayerType.arabicName} (${cityName})"
+            "تجربة أذان ${prayerType.arabicName} (${cityName})"
         } else {
-            "🕌 حان الآن وقت صلاة ${prayerType.arabicName} (${cityName})"
+            "حان الآن وقت صلاة ${prayerType.arabicName} (${cityName})"
         }
 
-        val bodyText = "حيّ على الصلاة، حيّ على الفلاح • اضغط «صليت ✅» لتسجيلها في عاداتك اليومية تلقائيًا."
+        val bodyText = "حيّ على الصلاة، حيّ على الفلاح • اضغط «صليت» لتسجيلها في عاداتك اليومية تلقائياً."
 
-        val notification = NotificationCompat.Builder(context, ADHAN_CHANNEL_ID)
+        val targetChannel = if (bellMode == com.example.core.prayer.PrayerBellMode.SILENT) {
+            ADHAN_SILENT_CHANNEL_ID
+        } else {
+            ADHAN_CHANNEL_ID
+        }
+
+        val notificationBuilder = NotificationCompat.Builder(context, targetChannel)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(titleText)
             .setContentText(bodyText)
             .setStyle(NotificationCompat.BigTextStyle().bigText(bodyText))
-            .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(true)
             .setContentIntent(openAppPending)
-            .setFullScreenIntent(openAppPending, true)
             .addAction(
                 android.R.drawable.checkbox_on_background,
-                "صليت ✅ (تسجيل كعادة)",
+                "صليت (تسجيل كعادة)",
                 prayedActionPending
             )
-            .build()
 
-        NotificationManagerCompat.from(context).notify(1000 + prayerType.ordinal, notification)
+        if (bellMode == com.example.core.prayer.PrayerBellMode.SILENT) {
+            notificationBuilder
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setSilent(true)
+                .setVibrate(null)
+        } else {
+            notificationBuilder
+                .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                .setFullScreenIntent(openAppPending, true)
+
+            if (bellMode == com.example.core.prayer.PrayerBellMode.VIBRATE) {
+                notificationBuilder.setVibrate(longArrayOf(0, 500, 300, 500))
+            }
+        }
+
+        NotificationManagerCompat.from(context).notify(1000 + prayerType.ordinal, notificationBuilder.build())
     }
 
     /**
-     * تحديث الإشعار بعد ضغط المستخدم على زر "صليت" لتأكيد التسجيل التلقائي
+     * تحديث الإشعار بعد ضغط المستخدم على زر صليت لتأكيد التسجيل التلقائي
      */
     fun showPrayerConfirmedNotification(context: Context, prayerType: PrayerType) {
         ensureChannelsCreated(context)
@@ -229,8 +300,8 @@ object AdhanNotificationHelper {
 
         val notification = NotificationCompat.Builder(context, ADHAN_CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("✅ تقبّل الله! تم تسجيل صلاة ${prayerType.arabicName}")
-            .setContentText("تم تحديث سجل صلوات اليوم وإضافتها لعادة «المحافظة على الصلوات الخمس» تلقائيًا.")
+            .setContentTitle("تقبّل الله! تم تسجيل صلاة ${prayerType.arabicName}")
+            .setContentText("تم تحديث سجل صلوات اليوم وإضافتها لعادة «المحافظة على الصلوات الخمس» تلقائياً.")
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
             .build()
@@ -270,7 +341,7 @@ object AdhanNotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val titleText = "🎓 تذكير محاضرة بعد $reminderMinutesBefore د: $lectureTitle ($courseCode)"
+        val titleText = "تذكير محاضرة بعد $reminderMinutesBefore د: $lectureTitle ($courseCode)"
         val bodyText = "الموعد: $startTime24 • القاعة: $location • جهّز ملاحظاتك الآن."
 
         val notification = NotificationCompat.Builder(context, ADHAN_CHANNEL_ID)
@@ -319,7 +390,7 @@ object AdhanNotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val prefix = if (isHabit) "🔥 منبه عادة" else "✅ منبه مهمة"
+        val prefix = if (isHabit) "منبه عادة" else "منبه مهمة"
         val bodyText = if (isHabit) {
             "حان موعد إنجاز عادتك: «$title»"
         } else {
@@ -371,7 +442,7 @@ object AdhanNotificationHelper {
 
         val notification = NotificationCompat.Builder(context, ADHAN_CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("🎉 اكتمل الهدف المطلوب: $subjectName ($durationMinutes د)")
+            .setContentTitle("اكتمل الهدف المطلوب: $subjectName ($durationMinutes د)")
             .setContentText("أحسنت! تم تحقيق المطلوب، ويمكنك الاستمرار لاحتساب وقت إضافي أو حفظ الجلسة.")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
@@ -488,6 +559,8 @@ object AdhanNotificationHelper {
         schedule.prayers
             .filter { it.type.isObligatory && it.timeMillisToday > now }
             .forEach { slot ->
+                val prefs = context.getSharedPreferences("prayer_alarm_prefs", Context.MODE_PRIVATE)
+                val bellMode = prefs.getString("prayer_bell_${slot.type.id}", null)
                 scheduleSingleExactAlarm(
                     context = context,
                     alarmManager = alarmManager,
@@ -495,7 +568,8 @@ object AdhanNotificationHelper {
                     prayerType = slot.type,
                     cityName = schedule.city.arabicName,
                     requestCode = 300 + slot.type.ordinal,
-                    isTest = false
+                    isTest = false,
+                    bellMode = bellMode
                 )
                 scheduledCount++
             }
@@ -513,6 +587,8 @@ object AdhanNotificationHelper {
     ): Boolean {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val triggerAt = System.currentTimeMillis() + (seconds * 1000L)
+        val prefs = context.getSharedPreferences("prayer_alarm_prefs", Context.MODE_PRIVATE)
+        val bellMode = prefs.getString("prayer_bell_${prayerType.id}", null)
         return scheduleSingleExactAlarm(
             context = context,
             alarmManager = alarmManager,
@@ -520,7 +596,8 @@ object AdhanNotificationHelper {
             prayerType = prayerType,
             cityName = cityName,
             requestCode = 999,
-            isTest = true
+            isTest = true,
+            bellMode = bellMode
         )
     }
 
@@ -531,12 +608,16 @@ object AdhanNotificationHelper {
         prayerType: PrayerType,
         cityName: String,
         requestCode: Int,
-        isTest: Boolean
+        isTest: Boolean,
+        bellMode: String? = null
     ): Boolean {
         val alarmIntent = Intent(context, AdhanAlarmReceiver::class.java).apply {
             putExtra(EXTRA_PRAYER_ID, prayerType.id)
             putExtra(EXTRA_CITY_NAME, cityName)
             putExtra(EXTRA_IS_TEST, isTest)
+            if (bellMode != null) {
+                putExtra(EXTRA_BELL_MODE, bellMode)
+            }
         }
         val pendingIntent = PendingIntent.getBroadcast(
             context,

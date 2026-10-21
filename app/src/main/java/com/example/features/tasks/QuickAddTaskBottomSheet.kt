@@ -5,14 +5,22 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import java.util.Calendar
+import java.util.Locale
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -121,29 +129,41 @@ fun QuickAddTaskBottomSheet(
     }
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val coroutineScope = rememberCoroutineScope()
+    var isInputVisible by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        delay(150)
+        keyboardController?.show()
+        delay(100)
         focusRequester.requestFocus()
+        delay(50)
+        isInputVisible = true
     }
 
-    val submitTask = {
+    val submitTask: () -> Unit = {
         if (title.isNotBlank()) {
-            onConfirm(
-                title.trim(),
-                notes.trim(),
-                listCategory,
-                priority,
-                if (alarmEnabled) alarmTime24.trim() else "",
-                alarmEnabled,
-                alarmType,
-                verifyMethod,
-                placeName.trim(),
-                qrCode.trim(),
-                selectedCategoryId,
-                dueDateText
-            )
-            onDismiss()
+            coroutineScope.launch {
+                // مستطيل المهمة يختفي أولاً ثم الكيبورد
+                isInputVisible = false
+                delay(160)
+                keyboardController?.hide()
+                delay(80)
+                onConfirm(
+                    title.trim(),
+                    notes.trim(),
+                    listCategory,
+                    priority,
+                    if (alarmEnabled) alarmTime24.trim() else "",
+                    alarmEnabled,
+                    alarmType,
+                    verifyMethod,
+                    placeName.trim(),
+                    qrCode.trim(),
+                    selectedCategoryId,
+                    dueDateText
+                )
+                onDismiss()
+            }
         }
     }
 
@@ -155,14 +175,28 @@ fun QuickAddTaskBottomSheet(
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         dragHandle = null
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .imePadding()
-                .padding(horizontal = 20.dp, vertical = 16.dp)
-                .navigationBarsPadding()
+        AnimatedVisibility(
+            visible = isInputVisible,
+            enter = slideInVertically(
+                initialOffsetY = { it },
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessLow
+                )
+            ) + fadeIn(),
+            exit = slideOutVertically(
+                targetOffsetY = { it },
+                animationSpec = tween(durationMillis = 160)
+            ) + fadeOut()
         ) {
-            // مؤشر المهمة الفرعية إن وجدت
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .imePadding()
+                    .padding(horizontal = 20.dp, vertical = 16.dp)
+                    .navigationBarsPadding()
+            ) {
+                // مؤشر المهمة الفرعية إن وجدت
             if (parentTask != null) {
                 Row(
                     modifier = Modifier
@@ -319,28 +353,28 @@ fun QuickAddTaskBottomSheet(
                             onDismissRequest = { showPriorityMenu = false }
                         ) {
                             DropdownMenuItem(
-                                text = { Text("أولوية عالية 🔴", fontWeight = FontWeight.Bold) },
+                                text = { Text("أولوية عالية", fontWeight = FontWeight.Bold) },
                                 onClick = {
                                     priority = "HIGH"
                                     showPriorityMenu = false
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("أولوية متوسطة 🟡", fontWeight = FontWeight.Bold) },
+                                text = { Text("أولوية متوسطة", fontWeight = FontWeight.Bold) },
                                 onClick = {
                                     priority = "MEDIUM"
                                     showPriorityMenu = false
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("أولوية منخفضة 🔵", fontWeight = FontWeight.Bold) },
+                                text = { Text("أولوية منخفضة", fontWeight = FontWeight.Bold) },
                                 onClick = {
                                     priority = "LOW"
                                     showPriorityMenu = false
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("بدون أولوية ⚪") },
+                                text = { Text("بدون أولوية") },
                                 onClick = {
                                     priority = "NONE"
                                     showPriorityMenu = false
@@ -401,6 +435,7 @@ fun QuickAddTaskBottomSheet(
                                     text = { Text(cat.name, fontWeight = FontWeight.Bold) },
                                     onClick = {
                                         selectedCategoryId = cat.id
+                                        listCategory = cat.name
                                         showCategoryMenu = false
                                     }
                                 )
@@ -408,7 +443,7 @@ fun QuickAddTaskBottomSheet(
                         }
                     }
 
-                    // أيقونة القائمة / المجلد (Folder/Box with arrow كما في الصورة)
+                    // أيقونة القائمة / المجلد
                     Box {
                         IconButton(
                             onClick = { showListCategoryMenu = true },
@@ -428,7 +463,16 @@ fun QuickAddTaskBottomSheet(
                             expanded = showListCategoryMenu,
                             onDismissRequest = { showListCategoryMenu = false }
                         ) {
-                            listOf("اليوم", "الدراسة", "العمل", "شخصي").forEach { cat ->
+                            val availableListCategories = buildList {
+                                add("اليوم")
+                                categories.forEach { c ->
+                                    val name = c.name.trim()
+                                    if (name.isNotBlank() && !contains(name)) {
+                                        add(name)
+                                    }
+                                }
+                            }
+                            availableListCategories.forEach { cat ->
                                 DropdownMenuItem(
                                     text = { Text(cat, fontWeight = if (listCategory == cat) FontWeight.Bold else FontWeight.Normal) },
                                     leadingIcon = {
@@ -438,6 +482,10 @@ fun QuickAddTaskBottomSheet(
                                     },
                                     onClick = {
                                         listCategory = cat
+                                        val match = categories.find { it.name.trim() == cat }
+                                        if (match != null) {
+                                            selectedCategoryId = match.id
+                                        }
                                         showListCategoryMenu = false
                                     }
                                 )
@@ -496,6 +544,7 @@ fun QuickAddTaskBottomSheet(
             }
         }
     }
+}
 
     // نافذة اختيار موعد المهمة والتذكير
     if (showDatePickerDialog) {
@@ -544,7 +593,9 @@ fun QuickAddTaskBottomSheet(
 }
 
 /**
- * نافذة سريعة لتحديد موعد إنجاز المهمة ووقت التنبيه
+ * نافذة سريعة لتحديد موعد إنجاز المهمة ووقت التنبيه:
+ * - موعد المهمة: تقويم ثم ساعة
+ * - منبه المهمة: ساعة بدون كتابة نص
  */
 @Composable
 private fun QuickDatePickerDialog(
@@ -555,27 +606,100 @@ private fun QuickDatePickerDialog(
     onSelectAlarm: (Boolean, String) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
     var tempDate by remember { mutableStateOf(currentDueDate) }
     var tempAlarmEnabled by remember { mutableStateOf(alarmEnabled) }
-    var tempTime by remember { mutableStateOf(currentAlarmTime) }
+    var tempTime by remember { mutableStateOf(currentAlarmTime.ifBlank { "09:00" }) }
+
+    // فتح التقويم ثم الساعة لموعد المهمة
+    val openCalendarThenClock = {
+        val cal = Calendar.getInstance()
+        val datePicker = android.app.DatePickerDialog(
+            context,
+            { _, year, month, dayOfMonth ->
+                val timePicker = android.app.TimePickerDialog(
+                    context,
+                    { _, hourOfDay, minute ->
+                        tempDate = String.format(Locale.ENGLISH, "%04d-%02d-%02d %02d:%02d", year, month + 1, dayOfMonth, hourOfDay, minute)
+                    },
+                    cal.get(Calendar.HOUR_OF_DAY),
+                    cal.get(Calendar.MINUTE),
+                    false
+                )
+                timePicker.show()
+            },
+            cal.get(Calendar.YEAR),
+            cal.get(Calendar.MONTH),
+            cal.get(Calendar.DAY_OF_MONTH)
+        )
+        datePicker.show()
+    }
+
+    // فتح الساعة لمنبه المهمة بدون كتابة
+    val openClockForAlarm = {
+        val parts = tempTime.split(":")
+        val h = parts.getOrNull(0)?.toIntOrNull() ?: 9
+        val m = parts.getOrNull(1)?.toIntOrNull() ?: 0
+        val timePicker = android.app.TimePickerDialog(
+            context,
+            { _, hourOfDay, minute ->
+                tempTime = String.format(Locale.ENGLISH, "%02d:%02d", hourOfDay, minute)
+                tempAlarmEnabled = true
+            },
+            h,
+            m,
+            false
+        )
+        timePicker.show()
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("موعد المهمة والتذكير", fontWeight = FontWeight.Bold) },
+        title = { Text("موعد المهمة والمنبه", fontWeight = FontWeight.Bold) },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text("الموعد المقترح:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                val dateOptions = listOf("اليوم", "غداً", "نهاية الأسبوع", "الأسبوع القادم", "بدون موعد")
+                Text("موعد المهمة (تقويم ثم ساعة):", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+
+                Surface(
+                    onClick = openCalendarThenClock,
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Default.CalendarToday, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                            Text("اختر تاريخاً ثم ساعة", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        }
+                        Text(
+                            text = tempDate,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+
+                val quickDates = listOf("اليوم", "غداً", "نهاية الأسبوع", "بدون موعد")
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    dateOptions.forEach { opt ->
+                    quickDates.forEach { opt ->
                         FilterChip(
                             selected = tempDate == opt,
                             onClick = { tempDate = opt },
@@ -591,18 +715,39 @@ private fun QuickDatePickerDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("تفعيل التنبيه بالوقت", fontWeight = FontWeight.Bold)
+                    Text("منبه المهمة (ساعة)", fontWeight = FontWeight.Bold)
                     Switch(checked = tempAlarmEnabled, onCheckedChange = { tempAlarmEnabled = it })
                 }
 
                 if (tempAlarmEnabled) {
-                    OutlinedTextField(
-                        value = tempTime,
-                        onValueChange = { tempTime = it },
-                        label = { Text("وقت التنبيه (ساعة:دقيقة مثل 09:00 أو 18:30)") },
-                        singleLine = true,
+                    Surface(
+                        onClick = openClockForAlarm,
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
                         modifier = Modifier.fillMaxWidth()
-                    )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(Icons.Default.AccessTime, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                Text("اضغط لضبط الساعة", fontWeight = FontWeight.Bold)
+                            }
+                            Text(
+                                text = tempTime,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
                 }
             }
         },
@@ -646,6 +791,7 @@ private fun AdvancedTaskOptionsDialog(
     onCapturePhoto: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -672,13 +818,48 @@ private fun AdvancedTaskOptionsDialog(
                 }
 
                 if (alarmEnabled) {
-                    OutlinedTextField(
-                        value = alarmTime24,
-                        onValueChange = onAlarmTimeChange,
-                        label = { Text("وقت الرنين (24 ساعة)") },
-                        singleLine = true,
+                    Surface(
+                        onClick = {
+                            val parts = alarmTime24.split(":")
+                            val h = parts.getOrNull(0)?.toIntOrNull() ?: 16
+                            val m = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                            val timePicker = android.app.TimePickerDialog(
+                                context,
+                                { _, hourOfDay, minute ->
+                                    onAlarmTimeChange(String.format(Locale.ENGLISH, "%02d:%02d", hourOfDay, minute))
+                                },
+                                h,
+                                m,
+                                false
+                            )
+                            timePicker.show()
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
                         modifier = Modifier.fillMaxWidth()
-                    )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(Icons.Default.AccessTime, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                Text("وقت رنين المنبه (الساعة)", fontWeight = FontWeight.Bold)
+                            }
+                            Text(
+                                text = alarmTime24,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
 
                     Text("نوع المنبه:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

@@ -39,7 +39,7 @@ fun KhatmahPlannerDialog(
 ) {
     var selectedTargetPages by remember { mutableIntStateOf(wirdProgress.dailyTargetPages) }
     var customPagesText by remember { mutableStateOf(wirdProgress.dailyTargetPages.toString()) }
-    var khatmahTitle by remember { mutableStateOf(wirdProgress.khatmahTitle.ifBlank { "الختمة المباركة" }) }
+    var khatmahTitle by remember { mutableStateOf(wirdProgress.khatmahTitle.ifBlank { "الختمة الحالية" }) }
     var isCustom by remember { mutableStateOf(wirdProgress.dailyTargetPages !in listOf(2, 4, 10, 20)) }
     var startPageText by remember { mutableStateOf(wirdProgress.currentPage.toString()) }
 
@@ -360,7 +360,7 @@ fun KhatmahPlannerDialog(
                     ) {
                         Icon(Icons.Default.MenuBook, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                         Text(
-                            text = "💡 ترتبط عادة الورد القرآني بهذه الخطة اليومية، وتكتمل آلياً فقط عند وضع علامة التوقف عند نهاية الورد بالمصحف (التعبئة اليدوية ممنوعة).",
+                            text = "ترتبط عادة الورد القرآني بهذه الخطة اليومية، وتكتمل آلياً فقط عند وضع علامة التوقف عند نهاية الورد بالمصحف (التعبئة اليدوية ممنوعة).",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface
                         )

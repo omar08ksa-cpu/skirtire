@@ -22,6 +22,8 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.example.features.calendar.MainEventsCalendarScreen
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -30,6 +32,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.core.protection.PlacePhotoHelper
 import com.example.data.CategoryEntity
@@ -46,51 +49,78 @@ import com.example.ui.theme.PriorityMediumAmber
 fun TasksScreen(
     uiState: DailyManagerUiState,
     viewModel: DailyManagerViewModel,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onStartTaskTimer: (TaskEntity) -> Unit = {}
 ) {
     var showAddTaskDialog by remember { mutableStateOf(false) }
     var parentForSubtask by remember { mutableStateOf<TaskEntity?>(null) }
     var editingAlarmTask by remember { mutableStateOf<TaskEntity?>(null) }
+    var showCategoryManagerDialog by remember { mutableStateOf(false) }
 
-    val categories = listOf("الكل", "اليوم", "الدراسة", "العمل", "شخصي")
-
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = {
-                    parentForSubtask = null
-                    showAddTaskDialog = true
-                },
-                icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                text = { Text("إضافة مهمة", fontWeight = FontWeight.Bold) },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier.testTag("add_task_fab")
-            )
+    val userCategories = remember(uiState.categories) {
+        val list = mutableListOf("الكل")
+        uiState.categories.forEach { cat ->
+            if (cat.name.isNotBlank() && !list.contains(cat.name)) {
+                list.add(cat.name)
+            }
         }
-    ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .testTag("tasks_screen_list"),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
+        if (list.size == 1) {
+            // إضافة فئات افتراضية إذا لم تكن هناك فئات مضافة بعد
+            list.addAll(listOf("اليوم", "الدراسة", "العمل", "شخصي"))
+        }
+        list
+    }
+
+    Box(modifier = modifier.fillMaxSize()) {
+                Scaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    contentWindowInsets = WindowInsets(0.dp),
+                    floatingActionButton = {
+                        ExtendedFloatingActionButton(
+                            onClick = {
+                                parentForSubtask = null
+                                showAddTaskDialog = true
+                            },
+                            icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                            text = { Text("إضافة مهمة", fontWeight = FontWeight.Bold) },
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.testTag("add_task_fab")
+                        )
+                    }
+                ) { innerPadding ->
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                            .testTag("tasks_screen_list"),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
             item {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    categories.forEach { cat ->
+                    userCategories.forEach { cat ->
                         FilterChip(
                             selected = uiState.selectedTaskCategory == cat,
                             onClick = { viewModel.selectTaskCategory(cat) },
                             label = { Text(cat, fontWeight = FontWeight.Bold) }
                         )
+                    }
+
+                    OutlinedButton(
+                        onClick = { showCategoryManagerDialog = true },
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                        modifier = Modifier.height(34.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("فئة جديدة", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -148,8 +178,8 @@ fun TasksScreen(
                             showAddTaskDialog = true
                         },
                         onEditAlarm = { editingAlarmTask = task },
-                        onExportToCalendar = { viewModel.exportTaskToGoogleCalendar(task) },
-                        onDeleteMain = { viewModel.deleteTask(task.id) }
+                        onDeleteMain = { viewModel.deleteTask(task.id) },
+                        onStartTimer = { onStartTaskTimer(task) }
                     )
                 }
             }
@@ -209,6 +239,22 @@ fun TasksScreen(
             }
         )
     }
+    if (showCategoryManagerDialog) {
+        com.example.features.habits.UniversalCategoryManagementDialog(
+            categories = uiState.categories,
+            onDismiss = { showCategoryManagerDialog = false },
+            onAddCategory = { name, colorHex, iconKey ->
+                viewModel.addCategory(name, colorHex, iconKey)
+            },
+            onUpdateCategory = { id, name, colorHex, iconKey ->
+                viewModel.updateCategory(id, name, colorHex, iconKey)
+            },
+            onDeleteCategory = { catId ->
+                viewModel.deleteCategory(catId)
+            }
+        )
+    }
+    }
 }
 
 @Composable
@@ -219,8 +265,8 @@ private fun TaskItemCard(
     onToggleSubtask: (String) -> Unit,
     onAddSubtask: () -> Unit,
     onEditAlarm: () -> Unit,
-    onExportToCalendar: () -> Unit,
-    onDeleteMain: () -> Unit
+    onDeleteMain: () -> Unit,
+    onStartTimer: () -> Unit = {}
 ) {
     val priorityColor = when (task.priority) {
         "HIGH" -> PriorityHighRed
@@ -302,12 +348,12 @@ private fun TaskItemCard(
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
-                        onClick = onExportToCalendar,
-                        modifier = Modifier.testTag("export_task_cal_${task.id}")
+                        onClick = onStartTimer,
+                        modifier = Modifier.testTag("task_timer_btn_${task.id}")
                     ) {
                         Icon(
-                            imageVector = Icons.Outlined.CalendarMonth,
-                            contentDescription = "تصدير إلى تقويم Google",
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = "بدء المؤقت",
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
@@ -372,7 +418,7 @@ private fun TaskItemCard(
 }
 
 @Composable
-internal fun AddTaskModal(
+fun AddTaskModal(
     parentTask: TaskEntity?,
     categories: List<CategoryEntity> = emptyList(),
     onDismiss: () -> Unit,

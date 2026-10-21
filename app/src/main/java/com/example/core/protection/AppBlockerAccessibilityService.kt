@@ -57,16 +57,26 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         }
 
         if (reason != null) {
-            performGlobalAction(GLOBAL_ACTION_HOME)
             launchBlockerScreen(pkg, reason)
         }
     }
 
     private fun launchBlockerScreen(blockedLabel: String, reason: String) {
-        ProtectionManager.triggerBlockerOverlayPreview(blockedLabel, reason)
+        val appLabel = try {
+            val ai = packageManager.getApplicationInfo(blockedLabel, 0)
+            packageManager.getApplicationLabel(ai).toString()
+        } catch (_: Exception) {
+            blockedLabel
+        }
+        ProtectionManager.triggerBlockerOverlayPreview(appLabel, reason)
         try {
             val intent = Intent(this, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra("intercepted_app_name", appLabel)
+                putExtra("intercepted_block_reason", reason)
             }
             startActivity(intent)
         } catch (_: Exception) {

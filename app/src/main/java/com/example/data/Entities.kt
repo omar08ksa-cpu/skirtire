@@ -206,20 +206,43 @@ data class BlockedAppEntity(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
     val packageName: String,
     val appName: String,
-    val category: String = "OTHER", // "SOCIAL", "ENTERTAINMENT", "PRODUCTIVITY", "TOOLS", "OTHER"
-    val blockInStudyMode: Boolean = true,
-    val blockInSleepMode: Boolean = true,
+    val category: String = "OTHER", // تصنيف جمالي فقط: "SOCIAL", "ENTERTAINMENT", "PRODUCTIVITY", "TOOLS", "OTHER"
+    val blockInStudyMode: Boolean = false,
+    val blockInSleepMode: Boolean = false,
     val isAlwaysBlocked: Boolean = false,
-    val dailyLimitMinutes: Int = 0, // 0 = بدون حد زمني (حظر حسب الجدول)، >0 = حد استخدام يومي بالدقائق مثل StayFree
-    val dailyLaunchLimit: Int = 0, // 0 = بدون حد لمرات الفتح، >0 = أقصى عدد لمرات فتح التطبيق اليوم
-    val usageImpact: String = "NEUTRAL", // "POSITIVE", "NEGATIVE", "NEUTRAL", "IGNORED" (عدم شمل التطبيق في مدة الاستخدام)
-    val specificBlockStartTime24: String = "", // جدول حظر خاص بالتطبيق
+    val isRestricted: Boolean = false, // مؤشر تقييد التطبيق الصريح
+    val isUninstalled: Boolean = false, // الاحتفاظ بالتطبيق بعد الحذف
+    val dailyLimitMinutes: Int = 0,
+    val dailyLaunchLimit: Int = 0,
+    val usageImpact: String = "NEUTRAL", // "POSITIVE", "NEGATIVE", "NEUTRAL", "EXCLUDED"
+    val specificBlockStartTime24: String = "",
     val specificBlockEndTime24: String = "",
     val specificBlockDays: String = "1,2,3,4,5,6,7",
     val specificBlockEnabled: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
     val deletedAt: Long? = null
+)
+
+@Entity(
+    tableName = "daily_app_usage_archive",
+    primaryKeys = ["dateKey", "packageName"],
+    indices = [
+        Index(value = ["dateKey"]),
+        Index(value = ["packageName"])
+    ]
+)
+data class DailyAppUsageArchiveEntity(
+    val dateKey: String, // "YYYY-MM-DD"
+    val packageName: String,
+    val appName: String,
+    val usedSeconds: Int = 0,
+    val usedMinutes: Int = usedSeconds / 60,
+    val launchCount: Int = 0,
+    val impactClassification: String = "NEUTRAL", // "POSITIVE", "NEUTRAL", "NEGATIVE", "EXCLUDED"
+    val genreLabel: String = "أخرى",
+    val isUninstalled: Boolean = false,
+    val lastSyncMillis: Long = System.currentTimeMillis()
 )
 
 @Entity(tableName = "block_schedules")
@@ -399,8 +422,22 @@ data class AppEventEntity(
     val isAllDay: Boolean = false,
     val category: String = "عام",
     val reminderMinutesBefore: Int = 15,
+    val isCountdown: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
     val deletedAt: Long? = null
 )
+
+@Entity(tableName = "life_milestones")
+data class LifeMilestoneEntity(
+    @PrimaryKey val id: String = UUID.randomUUID().toString(),
+    val title: String,
+    val description: String = "",
+    val dateKey: String, // YYYY-MM-DD
+    val emoji: String = "🌟",
+    val category: String = "شخصي", // ولادة، دراسة، مهنة، إنجاز، عائلة، ديني
+    val ageAtMilestoneYears: Float = 0f,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
 

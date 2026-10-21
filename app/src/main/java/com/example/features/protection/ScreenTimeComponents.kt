@@ -2,6 +2,7 @@ package com.example.features.protection
 
 import android.content.Context
 import androidx.compose.animation.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -18,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -26,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import com.example.core.prayer.UmmAlQuraCalculator
 import com.example.core.protection.AppUsageMonitor
 import com.example.core.protection.AppUsageStatItem
+import com.example.core.protection.DayUsageItem
 import com.example.core.protection.WeeklyUsageData
 import com.example.data.BlockedAppEntity
 import com.example.features.DailyManagerUiState
@@ -33,6 +36,60 @@ import com.example.ui.theme.EmeraldDeep
 import com.example.ui.theme.PriorityHighRed
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+/**
+ * أيقونة التطبيق الحقيقية المستخرجة من نظام أندرويد
+ */
+@Composable
+fun AppIconImage(
+    packageName: String,
+    modifier: Modifier = Modifier,
+    fallbackText: String = ""
+) {
+    val context = LocalContext.current
+    val bitmap = remember(packageName) {
+        try {
+            val drawable = context.packageManager.getApplicationIcon(packageName)
+            if (drawable is android.graphics.drawable.BitmapDrawable) {
+                drawable.bitmap.asImageBitmap()
+            } else {
+                val bmp = android.graphics.Bitmap.createBitmap(
+                    drawable.intrinsicWidth.coerceAtLeast(1),
+                    drawable.intrinsicHeight.coerceAtLeast(1),
+                    android.graphics.Bitmap.Config.ARGB_8888
+                )
+                val canvas = android.graphics.Canvas(bmp)
+                drawable.setBounds(0, 0, canvas.width, canvas.height)
+                drawable.draw(canvas)
+                bmp.asImageBitmap()
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap,
+            contentDescription = null,
+            modifier = modifier.clip(RoundedCornerShape(8.dp))
+        )
+    } else {
+        Box(
+            modifier = modifier
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = fallbackText.take(1).uppercase(),
+                fontWeight = FontWeight.Black,
+                color = MaterialTheme.colorScheme.primary,
+                fontSize = 12.sp
+            )
+        }
+    }
+}
 
 /**
  * بطاقة وقت الاستخدام السلبي والإيجابي وإجمالي وقت الشاشة اليوم
@@ -136,7 +193,7 @@ fun NegativeAndPositiveScreenTimeCard(
                                 modifier = Modifier.size(16.dp)
                             )
                             Text(
-                                text = "استخدام سلبي 🔴",
+                                text = "استخدام سلبي",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = PriorityHighRed
@@ -181,7 +238,7 @@ fun NegativeAndPositiveScreenTimeCard(
                                 modifier = Modifier.size(16.dp)
                             )
                             Text(
-                                text = "استخدام إيجابي 🟢",
+                                text = "استخدام إيجابي",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = EmeraldDeep
@@ -232,6 +289,8 @@ fun NegativeAndPositiveScreenTimeCard(
  */
 @Composable
 fun WeeklyPhoneUsageCard(
+    selectedDateKey: String? = null,
+    onSelectDay: ((DayUsageItem) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -267,7 +326,7 @@ fun WeeklyPhoneUsageCard(
             ) {
                 Column {
                     Text(
-                        text = "الرسم البياني لاستخدام الجوال في الأسبوع 📊",
+                        text = "الرسم البياني لاستخدام الجوال في الأسبوع",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.ExtraBold
                     )
@@ -321,6 +380,8 @@ fun WeeklyPhoneUsageCard(
                 if (data != null && data.days.isNotEmpty()) {
                     WeeklyBarChart(
                         days = data.days,
+                        selectedDateKey = selectedDateKey,
+                        onDayClick = onSelectDay,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(150.dp)

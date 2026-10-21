@@ -2,6 +2,7 @@ package com.example.features.habits
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -31,7 +32,9 @@ import com.example.core.prayer.UmmAlQuraCalculator
 import com.example.data.CategoryEntity
 import com.example.data.HabitEntity
 import com.example.data.HabitLogEntity
+import com.example.features.protection.formatTimeArabic
 import com.example.ui.theme.EmeraldDeep
+import com.example.ui.theme.PriorityHighRed
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.TextStyle
@@ -51,6 +54,9 @@ fun HabitDetailScreen(
     onUpdateChecklistItem: (itemId: String, checked: Boolean?, delta: Int?, setValue: Int?) -> Unit,
     onStartTimer: () -> Unit,
     onDeleteHabit: () -> Unit,
+    onEditAlarm: () -> Unit = {},
+    onEditPenalty: () -> Unit = {},
+    onNavigateToQuran: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     BackHandler { onBack() }
@@ -58,6 +64,7 @@ fun HabitDetailScreen(
     val todayLog = logsByDate[todayKey]
     val isDoneToday = todayLog?.isCompleted == true
     val isRestToday = todayLog?.status == "REST_SKIP"
+    var showDeleteConfirmation by remember { mutableStateOf(false) }
 
     val category = remember(categories, habit.categoryId) {
         categories.find { it.id == habit.categoryId }
@@ -161,7 +168,7 @@ fun HabitDetailScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = onDeleteHabit) {
+                    IconButton(onClick = { showDeleteConfirmation = true }) {
                         Icon(Icons.Default.DeleteOutline, contentDescription = "حذف العادة", tint = MaterialTheme.colorScheme.error)
                     }
                 },
@@ -240,7 +247,7 @@ fun HabitDetailScreen(
                                 Icon(Icons.Default.BeachAccess, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = if (isRestToday) "إلغاء الراحة" else "راحة / تخطي 🏖️",
+                                    text = if (isRestToday) "إلغاء الراحة" else "راحة / تخطي",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -277,7 +284,7 @@ fun HabitDetailScreen(
                                             tint = EmeraldDeep
                                         )
                                         Text(
-                                            text = if (isDoneToday) "تم إنجاز الورد بوضع علامة التوقف بالمصحف ✓" else "🔒 يكتمل آلياً بوضع علامة التوقف بالمصحف",
+                                            text = if (isDoneToday) "تم إنجاز الورد بوضع علامة التوقف بالمصحف" else "يكتمل آلياً بوضع علامة التوقف بالمصحف",
                                             fontWeight = FontWeight.Bold,
                                             color = EmeraldDeep
                                         )
@@ -287,6 +294,19 @@ fun HabitDetailScreen(
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
+                                    FilledTonalButton(
+                                        onClick = onNavigateToQuran,
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                        colors = ButtonDefaults.filledTonalButtonColors(
+                                            containerColor = EmeraldDeep.copy(alpha = 0.18f),
+                                            contentColor = EmeraldDeep
+                                        ),
+                                        modifier = Modifier.padding(top = 4.dp)
+                                    ) {
+                                        Icon(Icons.Default.MenuBook, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("اذهب للمصحف", fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
                         } else if (isCheckbox) {
@@ -301,7 +321,7 @@ fun HabitDetailScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = if (isDoneToday) "تم الإنجاز بنجاح اليوم 🎉" else "اضغط هنا لتسجيل الإنجاز",
+                                    text = if (isDoneToday) "تم الإنجاز بنجاح اليوم" else "اضغط هنا لتسجيل الإنجاز",
                                     fontWeight = FontWeight.Bold
                                 )
                                 Checkbox(
@@ -502,7 +522,12 @@ fun HabitDetailScreen(
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(text = "🔥", style = MaterialTheme.typography.titleMedium)
+                                Icon(
+                                    imageVector = Icons.Default.Whatshot,
+                                    contentDescription = null,
+                                    tint = Color(0xFFF97316),
+                                    modifier = Modifier.size(20.dp)
+                                )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     text = UmmAlQuraCalculator.toArabicDigits("${habit.currentStreak} يوم"),
@@ -522,7 +547,12 @@ fun HabitDetailScreen(
 
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(text = "🏆", style = MaterialTheme.typography.titleMedium)
+                                Icon(
+                                    imageVector = Icons.Default.EmojiEvents,
+                                    contentDescription = null,
+                                    tint = Color(0xFFEAB308),
+                                    modifier = Modifier.size(20.dp)
+                                )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     text = UmmAlQuraCalculator.toArabicDigits("${habit.bestStreak} يوم"),
@@ -635,7 +665,92 @@ fun HabitDetailScreen(
                     }
                 }
             }
+
+            // منبه العادة
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (habit.alarmEnabled) Icons.Default.NotificationsActive else Icons.Default.NotificationsOff,
+                                    contentDescription = null,
+                                    tint = if (habit.alarmEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Column {
+                                    Text("منبه العادة", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                                    Text(
+                                        text = if (habit.alarmEnabled) "مفعل الساعة ${formatTimeArabic(habit.alarmTime24)}" else "غير مفعل",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            OutlinedButton(onClick = onEditAlarm) {
+                                Text("ضبط المنبه")
+                            }
+                        }
+                    }
+                }
+            }
+
+
+
+            // زر حذف العادة بخطوتين
+            item {
+                OutlinedButton(
+                    onClick = { showDeleteConfirmation = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
+                ) {
+                    Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("حذف العادة")
+                }
+            }
         }
+    }
+
+    if (showDeleteConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            title = { Text("تأكيد حذف العادة", fontWeight = FontWeight.Bold) },
+            text = { Text("هل أنت متأكد من رغبتك في حذف عادة '${habit.title}'؟ سيتم حذف بياناتها وسجلاتها بالكامل.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteConfirmation = false
+                        onDeleteHabit()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("تأكيد الحذف", color = MaterialTheme.colorScheme.onError)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmation = false }) {
+                    Text("إلغاء")
+                }
+            }
+        )
     }
 }
 
@@ -780,9 +895,9 @@ fun HabitInteractiveMonthlyCalendar(
                                 val (bgColor, textColor, borderColor) = when (status) {
                                     HabitDayStatus.COMPLETED -> Triple(Color(0xFF10B981), Color.White, Color(0xFF10B981)) // أخضر
                                     HabitDayStatus.PARTIAL -> Triple(Color(0xFFF59E0B), Color.White, Color(0xFFF59E0B)) // أصفر
-                                    HabitDayStatus.FAILED -> Triple(Color(0xFFEF4444), Color.White, Color(0xFFEF4444)) // أحمر
+                                    HabitDayStatus.FAILED -> Triple(Color.Transparent, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)) // عادي بدون لون
                                     HabitDayStatus.REST_SKIP -> Triple(Color(0xFF3B82F6), Color.White, Color(0xFF3B82F6)) // أزرق
-                                    HabitDayStatus.UNRECORDED -> Triple(Color.Transparent, MaterialTheme.colorScheme.onSurface, MaterialTheme.colorScheme.outlineVariant) // أبيض / محايد
+                                    HabitDayStatus.UNRECORDED -> Triple(Color.Transparent, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)) // عادي بدون لون
                                 }
 
                                 Box(
@@ -832,9 +947,8 @@ fun HabitInteractiveMonthlyCalendar(
             ) {
                 LegendItem(color = Color(0xFF10B981), label = "مكتمل")
                 LegendItem(color = Color(0xFFF59E0B), label = "جزئي")
-                LegendItem(color = Color(0xFFEF4444), label = "فائت")
                 LegendItem(color = Color(0xFF3B82F6), label = "راحة/تخطي")
-                LegendItem(color = Color.LightGray, label = "غير مسجل")
+                LegendItem(color = Color.LightGray, label = "عادي / غير مسجل")
             }
         }
     }

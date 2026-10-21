@@ -68,38 +68,7 @@ enum class HabitDayStatus(val code: String, val title: String) {
 
 object HabitHelper {
 
-    val DEFAULT_CATEGORIES = listOf(
-        CategoryEntity(
-            id = "cat_health_fitness",
-            name = "صحة ولياقة",
-            colorHex = "#10B981",
-            iconKey = "FITNESS"
-        ),
-        CategoryEntity(
-            id = "cat_learning_reading",
-            name = "قراءة وتعلّم",
-            colorHex = "#3B82F6",
-            iconKey = "BOOK"
-        ),
-        CategoryEntity(
-            id = "cat_deen_spirituality",
-            name = "عبادة وروحانية",
-            colorHex = "#145946",
-            iconKey = "DEEN"
-        ),
-        CategoryEntity(
-            id = "cat_work_productivity",
-            name = "إنتاجية وعمل",
-            colorHex = "#8B5CF6",
-            iconKey = "WORK"
-        ),
-        CategoryEntity(
-            id = "cat_personal_growth",
-            name = "تطوير الذات",
-            colorHex = "#F59E0B",
-            iconKey = "STAR"
-        )
-    )
+    val DEFAULT_CATEGORIES: List<CategoryEntity> = emptyList()
 
     fun serializeChecklistItems(items: List<HabitChecklistItem>): String {
         val array = JSONArray()
@@ -322,6 +291,22 @@ object HabitHelper {
 
         if (!isScheduled) {
             return HabitDayStatus.UNRECORDED
+        }
+
+        // إذا كان التاريخ يسبق تاريخ بدء العادة أو تاريخ إنشائها، لا يعتبر فاشلاً بل غير مسجل
+        if (habit.startDateKey.isNotBlank()) {
+            try {
+                val start = LocalDate.parse(habit.startDateKey)
+                if (LocalDate.parse(dateKey).isBefore(start)) return HabitDayStatus.UNRECORDED
+            } catch (_: Exception) {}
+        }
+        if (habit.createdAt > 0) {
+            try {
+                val created = java.time.Instant.ofEpochMilli(habit.createdAt)
+                    .atZone(java.time.ZoneId.systemDefault())
+                    .toLocalDate()
+                if (LocalDate.parse(dateKey).isBefore(created)) return HabitDayStatus.UNRECORDED
+            } catch (_: Exception) {}
         }
 
         // إذا كان التاريخ في الماضي ولم يُنجز

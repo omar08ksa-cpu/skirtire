@@ -86,77 +86,61 @@ fun PrayerCelestialArcCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Brush.verticalGradient(colors = cardGradient))
-                .padding(horizontal = 18.dp, vertical = 20.dp)
+                .padding(horizontal = 16.dp, vertical = 10.dp)
         ) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                // الشريط العلوي داخل البطاقة: اسم المدينة والتاريخ وزر ضبط المنبهات
+                // الشريط العلوي داخل البطاقة: اسم المدينة والتاريخ المصغر وبدون جرس
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.Start,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Surface(
                             shape = CircleShape,
                             color = Color.White.copy(alpha = 0.12f),
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(22.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Default.LocationOn,
                                     contentDescription = null,
                                     tint = if (isDaytime) GoldSoft else MintAccent,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(13.dp)
                                 )
                             }
                         }
                         Column {
                             Text(
                                 text = schedule.city.arabicName,
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.ExtraBold,
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                                fontWeight = FontWeight.Bold,
                                 color = Color.White
                             )
                             Text(
                                 text = schedule.hijriFormatted,
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                                 color = Color.White.copy(alpha = 0.70f)
                             )
                         }
-                    }
-
-                    IconButton(
-                        onClick = onOpenSettingsClick,
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.12f))
-                            .testTag("open_prayer_settings_icon_btn")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Notifications,
-                            contentDescription = "الضبط والمنبهات",
-                            tint = GoldSoft,
-                            modifier = Modifier.size(20.dp)
-                        )
                     }
                 }
 
                 // عنوان باقي على الصلاة + العدّاد الرقمي الأبرز
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Text(
                         text = "باقي على صلاة ${schedule.nextPrayer.type.arabicName}",
-                        style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp),
+                        style = MaterialTheme.typography.labelMedium.copy(fontSize = 14.sp),
                         fontWeight = FontWeight.Bold,
                         color = Color.White.copy(alpha = 0.90f)
                     )
@@ -164,7 +148,7 @@ fun PrayerCelestialArcCard(
                     Text(
                         text = schedule.countdownFormatted,
                         style = MaterialTheme.typography.displaySmall.copy(
-                            fontSize = 38.sp,
+                            fontSize = 28.sp,
                             letterSpacing = 1.sp
                         ),
                         fontWeight = FontWeight.Black,
@@ -172,11 +156,11 @@ fun PrayerCelestialArcCard(
                     )
                 }
 
-                // المنحنى الفلكي السماوي مع الشمس أو القمر
+                // المنحنى الفلكي السماوي مع الشمس أو القمر مرفوع ومقصر
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(84.dp)
+                        .height(48.dp)
                 ) {
                     Canvas(modifier = Modifier.fillMaxSize()) {
                         val w = size.width
@@ -196,49 +180,43 @@ fun PrayerCelestialArcCard(
                             starPoints.forEach { pt ->
                                 drawCircle(
                                     color = Color.White.copy(alpha = 0.35f),
-                                    radius = 2.dp.toPx(),
+                                    radius = 1.5.dp.toPx(),
                                     center = pt
                                 )
                             }
                         }
 
-                        // مسار القوس المنحني (Curved arc from right (Prev) to left (Next))
-                        // في العربية من اليمين (الصلاة السابقة) لليسار (الصلاة التالية)
-                        val startX = w * 0.92f
-                        val startY = h * 0.78f
-                        val endX = w * 0.08f
-                        val endY = h * 0.78f
+                        // مسار القوس المنحني المرفوع لأعلى
+                        val startX = w * 0.90f
+                        val startY = h * 0.70f
+                        val endX = w * 0.10f
+                        val endY = h * 0.70f
                         val controlX = w * 0.50f
-                        val controlY = h * 0.08f
+                        val controlY = h * 0.02f
 
                         val arcPath = Path().apply {
                             moveTo(startX, startY)
                             quadraticBezierTo(controlX, controlY, endX, endY)
                         }
 
-                        // رسم المسار الخلفي الخافت (منقط أو شفاف)
+                        // رسم المسار الخلفي الخافت
                         drawPath(
                             path = arcPath,
                             color = Color.White.copy(alpha = 0.18f),
                             style = Stroke(
-                                width = 3.dp.toPx(),
+                                width = 2.5.dp.toPx(),
                                 cap = StrokeCap.Round,
-                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 10f), 0f)
+                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f), 0f)
                             )
                         )
 
-                        // حساب موضع الشمس أو القمر على المنحنى التربيعي (t = animatedProgress)
-                        // B(t) = (1-t)^2 * P0 + 2(1-t)t * P1 + t^2 * P2
-                        // حيث يبدأ من اليمين P0 (t=0) وينتهي عند اليسار P2 (t=1)
                         val t = animatedProgress
                         val oneMinusT = 1.0f - t
                         val celestialX = (oneMinusT * oneMinusT * startX) + (2f * oneMinusT * t * controlX) + (t * t * endX)
                         val celestialY = (oneMinusT * oneMinusT * startY) + (2f * oneMinusT * t * controlY) + (t * t * endY)
 
-                        // مسار التعبئة المتوهج حتى موضع الجرم السماوي
                         val filledPath = Path().apply {
                             moveTo(startX, startY)
-                            // تقسيم مسار بيزيه لنقاط حتى t
                             val steps = 24
                             for (i in 1..steps) {
                                 val subT = (t * (i.toFloat() / steps))
@@ -253,113 +231,91 @@ fun PrayerCelestialArcCard(
                         drawPath(
                             path = filledPath,
                             color = trackColor,
-                            style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round)
+                            style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
                         )
 
                         // هالة التوهج للجرم السماوي
                         val glowColor = if (isDaytime) GoldWarm.copy(alpha = 0.40f) else Color(0xFF38BDF8).copy(alpha = 0.40f)
                         drawCircle(
                             color = glowColor,
-                            radius = 18.dp.toPx(),
+                            radius = 14.dp.toPx(),
                             center = Offset(celestialX, celestialY)
                         )
 
                         val coreColor = if (isDaytime) Color(0xFFFBBF24) else Color(0xFFE2E8F0)
                         drawCircle(
                             color = coreColor,
-                            radius = 9.dp.toPx(),
+                            radius = 7.dp.toPx(),
                             center = Offset(celestialX, celestialY)
                         )
 
                         if (isDaytime) {
-                            // أشعة شمسية صغيرة
                             for (angle in 0 until 360 step 45) {
                                 val rad = Math.toRadians(angle.toDouble())
-                                val rx1 = celestialX + (cos(rad) * 11.dp.toPx()).toFloat()
-                                val ry1 = celestialY + (sin(rad) * 11.dp.toPx()).toFloat()
-                                val rx2 = celestialX + (cos(rad) * 15.dp.toPx()).toFloat()
-                                val ry2 = celestialY + (sin(rad) * 15.dp.toPx()).toFloat()
+                                val rx1 = celestialX + (cos(rad) * 9.dp.toPx()).toFloat()
+                                val ry1 = celestialY + (sin(rad) * 9.dp.toPx()).toFloat()
+                                val rx2 = celestialX + (cos(rad) * 12.dp.toPx()).toFloat()
+                                val ry2 = celestialY + (sin(rad) * 12.dp.toPx()).toFloat()
                                 drawLine(
                                     color = GoldSoft,
                                     start = Offset(rx1, ry1),
                                     end = Offset(rx2, ry2),
-                                    strokeWidth = 2.dp.toPx(),
+                                    strokeWidth = 1.8.dp.toPx(),
                                     cap = StrokeCap.Round
                                 )
                             }
                         } else {
-                            // ظل الهلال لإعطاء شكل قمر حقيقي
                             drawCircle(
                                 color = cardGradient[1],
-                                radius = 7.dp.toPx(),
-                                center = Offset(celestialX + 3.dp.toPx(), celestialY - 2.dp.toPx())
+                                radius = 5.dp.toPx(),
+                                center = Offset(celestialX + 2.5.dp.toPx(), celestialY - 1.5.dp.toPx())
                             )
                         }
                     }
                 }
 
-                // أقصى اليمين: الصلاة السابقة • أقصى اليسار: الصلاة التالية
+                // أقصى اليمين واليسار: أسماء وأوقات الصلوات السابقة والتالية بدون كلمات "الصلاة السابقة" و "الصلاة التالية"
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // أقصى اليمين: الصلاة السابقة
-                    Column(
-                        horizontalAlignment = Alignment.Start,
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    // أقصى اليمين: الصلاة السابقة بدون كلمة "الصلاة السابقة"
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Text(
-                            text = "الصلاة السابقة",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White.copy(alpha = 0.65f)
+                            text = schedule.previousPrayer.type.arabicName,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
                         )
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Text(
-                                text = schedule.previousPrayer.type.arabicName,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                            Text(
-                                text = schedule.previousPrayer.formatted12h,
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.Medium,
-                                color = Color.White.copy(alpha = 0.80f)
-                            )
-                        }
+                        Text(
+                            text = schedule.previousPrayer.formatted12h,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White.copy(alpha = 0.80f)
+                        )
                     }
 
-                    // أقصى اليسار: الصلاة التالية
-                    Column(
-                        horizontalAlignment = Alignment.End,
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    // أقصى اليسار: الصلاة التالية بدون كلمة "الصلاة التالية"
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Text(
-                            text = "الصلاة التالية",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White.copy(alpha = 0.65f)
+                            text = schedule.nextPrayer.type.arabicName,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = if (isDaytime) GoldSoft else MintAccent
                         )
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Text(
-                                text = schedule.nextPrayer.type.arabicName,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = if (isDaytime) GoldSoft else MintAccent
-                            )
-                            Text(
-                                text = schedule.nextPrayer.formatted12h,
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                        }
+                        Text(
+                            text = schedule.nextPrayer.formatted12h,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
                     }
                 }
             }

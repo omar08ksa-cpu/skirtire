@@ -73,10 +73,9 @@ fun InteractiveAthkarReaderDialog(
             modifier = Modifier
                 .fillMaxSize()
                 .testTag("athkar_reader_dialog"),
-            color = MaterialTheme.colorScheme.background
+            color = MaterialTheme.colorScheme.surface
         ) {
             if (isSessionCompleted) {
-                // شاشة الاحتفال بإتمام الأذكار كاملة
                 AthkarCompletionView(
                     categoryTitle = categoryTitle,
                     isMorning = isMorning,
@@ -91,13 +90,12 @@ fun InteractiveAthkarReaderDialog(
                     modifier = Modifier
                         .fillMaxSize()
                         .statusBarsPadding()
-                        .navigationBarsPadding()
                 ) {
-                    // 1. الشريط العلوي: العنوان، العداد، زر الإغلاق، وشريط التقدم
+                    // 1. الشريط العلوي: متناسق تماماً مع لون خلفية الشاشة
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         color = MaterialTheme.colorScheme.surface,
-                        tonalElevation = 3.dp
+                        tonalElevation = 0.dp
                     ) {
                         Column(
                             modifier = Modifier
@@ -116,14 +114,14 @@ fun InteractiveAthkarReaderDialog(
                                 ) {
                                     Surface(
                                         shape = CircleShape,
-                                        color = if (isMorning) GoldSoft.copy(alpha = 0.2f) else Color(0xFF6366F1).copy(alpha = 0.2f),
+                                        color = if (isMorning) GoldSoft.copy(alpha = 0.35f) else MaterialTheme.colorScheme.primaryContainer,
                                         modifier = Modifier.size(36.dp)
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
                                             Icon(
                                                 imageVector = if (isMorning) Icons.Default.WbSunny else Icons.Default.NightlightRound,
                                                 contentDescription = null,
-                                                tint = if (isMorning) GoldWarm else Color(0xFFA5B4FC),
+                                                tint = if (isMorning) GoldWarm else MaterialTheme.colorScheme.primary,
                                                 modifier = Modifier.size(20.dp)
                                             )
                                         }
@@ -159,239 +157,178 @@ fun InteractiveAthkarReaderDialog(
                                     .fillMaxWidth()
                                     .height(6.dp)
                                     .clip(CircleShape),
-                                color = if (isMorning) EmeraldDeep else Color(0xFF6366F1),
+                                color = if (isMorning) EmeraldDeep else MaterialTheme.colorScheme.primary,
                                 trackColor = MaterialTheme.colorScheme.surfaceVariant
                             )
                         }
                     }
 
-                    // 2. بطاقة الذكر المركزية التفاعلية
-                    Box(
+                    // 2. بطاقة الذكر المركزية التفاعلية مع مساحة سفلية كافية
+                    Card(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth()
-                            .padding(16.dp),
-                        contentAlignment = Alignment.Center
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                     ) {
-                        Card(
+                        Column(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .verticalScroll(rememberScrollState()),
-                            shape = RoundedCornerShape(24.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surface
-                            ),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState())
+                                .padding(horizontal = 18.dp, vertical = 14.dp)
+                                .padding(bottom = 36.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            Column(
+                            // شارة اسم الذكر والمطلوب
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = if (isMorning) EmeraldDeep.copy(alpha = 0.12f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                                ) {
+                                    Text(
+                                        text = currentDhikr.title,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = if (isMorning) EmeraldDeep else MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                    )
+                                }
+
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = MaterialTheme.colorScheme.secondaryContainer
+                                ) {
+                                    val reqText = if (currentDhikr.targetCount == 1) {
+                                        "مرة واحدة"
+                                    } else {
+                                        "${UmmAlQuraCalculator.toArabicDigits(currentDhikr.targetCount.toString())} مرات"
+                                    }
+                                    Text(
+                                        text = "المطلوب: $reqText",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                            // نص الذكر
+                            Text(
+                                text = currentDhikr.arabicText,
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontSize = 19.sp,
+                                    lineHeight = 32.sp
+                                ),
+                                fontWeight = FontWeight.SemiBold,
+                                textAlign = TextAlign.Center,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(22.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(16.dp)
-                            ) {
-                                // شارة اسم الذكر والمطلوب
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Surface(
-                                        shape = RoundedCornerShape(10.dp),
-                                        color = if (isMorning) EmeraldDeep.copy(alpha = 0.12f) else Color(0xFF6366F1).copy(alpha = 0.15f)
-                                    ) {
-                                        Text(
-                                            text = currentDhikr.title,
-                                            style = MaterialTheme.typography.labelLarge,
-                                            color = if (isMorning) EmeraldDeep else Color(0xFF818CF8),
-                                            fontWeight = FontWeight.ExtraBold,
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                                        )
-                                    }
+                                    .padding(vertical = 8.dp)
+                            )
 
-                                    Surface(
-                                        shape = RoundedCornerShape(10.dp),
-                                        color = MaterialTheme.colorScheme.secondaryContainer
+                            // فضل الذكر
+                            if (currentDhikr.virtueOrNote.isNotEmpty()) {
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = MaterialTheme.colorScheme.surface,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        val reqText = if (currentDhikr.targetCount == 1) {
-                                            "مرة واحدة"
-                                        } else {
-                                            "${UmmAlQuraCalculator.toArabicDigits(currentDhikr.targetCount.toString())} مرات"
-                                        }
+                                        Icon(
+                                            Icons.Default.AutoAwesome,
+                                            contentDescription = null,
+                                            tint = GoldWarm,
+                                            modifier = Modifier.size(18.dp)
+                                        )
                                         Text(
-                                            text = "المطلوب: $reqText",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                            text = currentDhikr.virtueOrNote,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            lineHeight = 20.sp
                                         )
                                     }
                                 }
+                            }
 
-                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                            Spacer(modifier = Modifier.height(6.dp))
 
-                                // نص الذكر القرآني والنبوي الشريف
-                                Text(
-                                    text = currentDhikr.arabicText,
-                                    style = MaterialTheme.typography.titleMedium.copy(
-                                        fontSize = 19.sp,
-                                        lineHeight = 32.sp
-                                    ),
-                                    fontWeight = FontWeight.SemiBold,
-                                    textAlign = TextAlign.Center,
-                                    color = MaterialTheme.colorScheme.onSurface,
+                            // زر الإنجاز أو التسبيح
+                            if (currentDhikr.targetCount == 1) {
+                                Button(
+                                    onClick = {
+                                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                        if (!completedItemIds.contains(currentDhikr.id)) {
+                                            completedItemIds.add(currentDhikr.id)
+                                        }
+                                        if (currentIndex < items.size - 1) {
+                                            currentIndex++
+                                            currentItemCount = 0
+                                        } else {
+                                            isSessionCompleted = true
+                                        }
+                                    },
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(vertical = 8.dp)
-                                )
-
-                                // فضل الذكر أو الملاحظة إن وجدت
-                                if (currentDhikr.virtueOrNote.isNotEmpty()) {
-                                    Surface(
-                                        shape = RoundedCornerShape(14.dp),
-                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(12.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            Icon(
-                                                Icons.Default.AutoAwesome,
-                                                contentDescription = null,
-                                                tint = GoldWarm,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                            Text(
-                                                text = currentDhikr.virtueOrNote,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                lineHeight = 20.sp
-                                            )
-                                        }
-                                    }
+                                        .height(54.dp)
+                                        .testTag("dhikr_single_complete_btn"),
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (isMorning) EmeraldDeep else MaterialTheme.colorScheme.primary
+                                    )
+                                ) {
+                                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(20.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = if (currentIndex < items.size - 1) "قرأت هذا الذكر (التالي)" else "إتمام وقراءة آخر ذكر",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
                                 }
+                            } else {
+                                val remaining = (currentDhikr.targetCount - currentItemCount).coerceAtLeast(0)
 
-                                Spacer(modifier = Modifier.height(6.dp))
-
-                                // الجزء التفاعلي:
-                                // إذا كان المطلوب مرة واحدة: زر علامة صح للانتقال للتالي مباشرة
-                                // إذا كان أكثر من مرة: نص يوضح كم خلصت وكم باقي لك + زر التسبيح التفاعلي
-                                if (currentDhikr.targetCount == 1) {
-                                    val isCurrentCompleted = completedItemIds.contains(currentDhikr.id)
-
-                                    Button(
-                                        onClick = {
-                                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                            if (!completedItemIds.contains(currentDhikr.id)) {
-                                                completedItemIds.add(currentDhikr.id)
-                                            }
-                                            // الانتقال للذكر التالي أو إتمام الجلسة
-                                            if (currentIndex < items.size - 1) {
-                                                currentIndex++
-                                                currentItemCount = 0
-                                            } else {
-                                                isSessionCompleted = true
-                                            }
-                                        },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(56.dp)
-                                            .testTag("dhikr_single_complete_btn"),
-                                        shape = RoundedCornerShape(16.dp),
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = if (isMorning) EmeraldDeep else Color(0xFF4F46E5)
-                                        )
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = MaterialTheme.colorScheme.surface
                                     ) {
-                                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(22.dp))
-                                        Spacer(modifier = Modifier.width(8.dp))
                                         Text(
-                                            text = if (currentIndex < items.size - 1) "قرأت هذا الذكر (التالي ✓)" else "إتمام وقراءة آخر ذكر ✓",
+                                            text = "تم: ${UmmAlQuraCalculator.toArabicDigits(currentItemCount.toString())} من ${UmmAlQuraCalculator.toArabicDigits(currentDhikr.targetCount.toString())} — المتبقي: ${UmmAlQuraCalculator.toArabicDigits(remaining.toString())}",
                                             style = MaterialTheme.typography.titleSmall,
-                                            fontWeight = FontWeight.ExtraBold
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
                                         )
                                     }
-                                } else {
-                                    // الذكر مطلوب أكثر من مرة (3، 10، 100)
-                                    val remaining = (currentDhikr.targetCount - currentItemCount).coerceAtLeast(0)
-                                    val isTargetReached = currentItemCount >= currentDhikr.targetCount
 
-                                    Column(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                                    ) {
-                                        // النص المطلوب بالحرف: يوضح كم خلصت وكم باقي لك
-                                        Surface(
-                                            shape = RoundedCornerShape(12.dp),
-                                            color = if (isTargetReached) {
-                                                EmeraldDeep.copy(alpha = 0.15f)
-                                            } else {
-                                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-                                            }
-                                        ) {
-                                            Text(
-                                                text = if (isTargetReached) {
-                                                    "اكتمل العدد بنجاح! (${UmmAlQuraCalculator.toArabicDigits(currentDhikr.targetCount.toString())} من ${UmmAlQuraCalculator.toArabicDigits(currentDhikr.targetCount.toString())})"
-                                                } else {
-                                                    "تم: ${UmmAlQuraCalculator.toArabicDigits(currentItemCount.toString())} من ${UmmAlQuraCalculator.toArabicDigits(currentDhikr.targetCount.toString())} — المتبقي: ${UmmAlQuraCalculator.toArabicDigits(remaining.toString())}"
-                                                },
-                                                style = MaterialTheme.typography.titleSmall,
-                                                fontWeight = FontWeight.ExtraBold,
-                                                color = if (isTargetReached) EmeraldDeep else MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
-                                            )
-                                        }
-
-                                        // زر التسبيح والعد التفاعلي
-                                        if (!isTargetReached) {
-                                            Surface(
-                                                modifier = Modifier
-                                                    .size(110.dp)
-                                                    .clickable {
-                                                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                                        val next = currentItemCount + 1
-                                                        currentItemCount = next
-                                                        if (next >= currentDhikr.targetCount) {
-                                                            if (!completedItemIds.contains(currentDhikr.id)) {
-                                                                completedItemIds.add(currentDhikr.id)
-                                                            }
-                                                        }
-                                                    }
-                                                    .testTag("dhikr_counter_tap_btn"),
-                                                shape = CircleShape,
-                                                color = if (isMorning) EmeraldDeep else Color(0xFF4F46E5),
-                                                shadowElevation = 6.dp
-                                            ) {
-                                                Box(
-                                                    contentAlignment = Alignment.Center,
-                                                    modifier = Modifier.padding(8.dp)
-                                                ) {
-                                                    Column(
-                                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                                        verticalArrangement = Arrangement.Center
-                                                    ) {
-                                                        Text(
-                                                            text = UmmAlQuraCalculator.toArabicDigits(remaining.toString()),
-                                                            style = MaterialTheme.typography.headlineMedium,
-                                                            fontWeight = FontWeight.Black,
-                                                            color = Color.White
-                                                        )
-                                                        Text(
-                                                            text = "اضغط للعد",
-                                                            style = MaterialTheme.typography.labelSmall,
-                                                            color = Color.White.copy(alpha = 0.85f),
-                                                            fontWeight = FontWeight.Bold
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        } else {
-                                            // اكتمل العدد لهذا الذكر — زر الانتقال للتالي
-                                            Button(
-                                                onClick = {
-                                                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                    Surface(
+                                        modifier = Modifier
+                                            .size(96.dp)
+                                            .clickable {
+                                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                                val next = currentItemCount + 1
+                                                if (next >= currentDhikr.targetCount) {
                                                     if (!completedItemIds.contains(currentDhikr.id)) {
                                                         completedItemIds.add(currentDhikr.id)
                                                     }
@@ -401,32 +338,48 @@ fun InteractiveAthkarReaderDialog(
                                                     } else {
                                                         isSessionCompleted = true
                                                     }
-                                                },
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .height(56.dp)
-                                                    .testTag("dhikr_next_after_target_btn"),
-                                                shape = RoundedCornerShape(16.dp),
-                                                colors = ButtonDefaults.buttonColors(
-                                                    containerColor = Color(0xFF10B981)
-                                                )
+                                                } else {
+                                                    currentItemCount = next
+                                                }
+                                            }
+                                            .testTag("dhikr_counter_tap_btn"),
+                                        shape = CircleShape,
+                                        color = if (isMorning) EmeraldDeep else MaterialTheme.colorScheme.primary,
+                                        shadowElevation = 4.dp
+                                    ) {
+                                        Box(
+                                            contentAlignment = Alignment.Center,
+                                            modifier = Modifier.padding(6.dp)
+                                        ) {
+                                            Column(
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                verticalArrangement = Arrangement.Center
                                             ) {
-                                                Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(22.dp))
-                                                Spacer(modifier = Modifier.width(8.dp))
                                                 Text(
-                                                    text = if (currentIndex < items.size - 1) "اكتمل الذكر — الانتقال للتالي ➔" else "اكتملت جميع الأذكار — إنهاء 🎉",
-                                                    style = MaterialTheme.typography.titleSmall,
-                                                    fontWeight = FontWeight.ExtraBold
+                                                    text = UmmAlQuraCalculator.toArabicDigits(remaining.toString()),
+                                                    style = MaterialTheme.typography.headlineMedium,
+                                                    fontWeight = FontWeight.Black,
+                                                    color = Color.White
+                                                )
+                                                Text(
+                                                    text = "اضغط للعد",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = Color.White.copy(alpha = 0.85f),
+                                                    fontWeight = FontWeight.Bold
                                                 )
                                             }
                                         }
                                     }
                                 }
                             }
+
+                            Spacer(modifier = Modifier.height(16.dp))
                         }
                     }
 
-                    // 3. شريط التنقل السفلي: السابق، إعادة تعيين، التالي
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+
+                    // 3. شريط التنقل السفلي: مرفوع بوضوح ومحمي من القص
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         color = MaterialTheme.colorScheme.surface,
@@ -435,7 +388,8 @@ fun InteractiveAthkarReaderDialog(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                                .navigationBarsPadding()
+                                .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 28.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -570,7 +524,7 @@ private fun AthkarCompletionView(
                     ) {
                         Icon(Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldDeep, modifier = Modifier.size(24.dp))
                         Text(
-                            text = "تم توثيق إنجاز العادة اليومية تلقائياً في صفحة العادات ✅",
+                            text = "تم توثيق إنجاز العادة اليومية تلقائياً في صفحة العادات",
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Bold,
                             color = EmeraldDeep

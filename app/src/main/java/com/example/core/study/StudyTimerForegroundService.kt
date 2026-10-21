@@ -81,12 +81,25 @@ class StudyTimerForegroundService : Service() {
 
     private fun startTicker() {
         tickerJob?.cancel()
+        val powerManager = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+        var screenOffCounter = 0
         tickerJob = serviceScope.launch {
             while (true) {
                 delay(1000L)
                 val state = StudyTimerManager.timerState.value
                 if (!state.isActive) break
                 if (state.isPaused) continue
+
+                // إذا كانت الشاشة مغلقة / الجوال مقفلاً، يشتغل ثانية ويطفى ثانية (30 دقيقة قفل = 15 دقيقة عداد)
+                val isScreenInteractive = powerManager?.isInteractive ?: true
+                if (!isScreenInteractive) {
+                    screenOffCounter++
+                    if (screenOffCounter % 2 != 0) {
+                        continue
+                    }
+                } else {
+                    screenOffCounter = 0
+                }
 
                 if (state.mode == "POMODORO") {
                     val nextPhaseSec = state.phaseElapsedSeconds + 1
@@ -141,6 +154,30 @@ class StudyTimerForegroundService : Service() {
                                 } else cur.lastCompletedMessage
                             )
                         }
+                    }
+                } else if (state.mode == "COUNTDOWN") {
+                    // العداد التنازلي: ينقص حتى يصل إلى 00:00 ويتوقف مع تنبيه
+                    val nextElapsed = state.elapsedSeconds + 1
+                    val isFinished = nextElapsed >= state.targetDurationSeconds
+                    val justReachedZero = !state.goalReachedNotified && isFinished
+
+                    if (justReachedZero) {
+                        AdhanNotificationHelper.showStudyPomodoroCompletedNotification(
+                            context = applicationContext,
+                            subjectName = if (state.subjectName.isNotBlank()) state.subjectName else "العداد التنازلي",
+                            durationMinutes = (state.targetDurationSeconds / 60).coerceAtLeast(1)
+                        )
+                    }
+
+                    StudyTimerManager.internalUpdate { cur ->
+                        cur.copy(
+                            elapsedSeconds = if (isFinished) cur.targetDurationSeconds else nextElapsed,
+                            isPaused = if (isFinished) true else cur.isPaused,
+                            goalReachedNotified = cur.goalReachedNotified || justReachedZero,
+                            lastCompletedMessage = if (justReachedZero) {
+                                "⏳🎉 انتهى العداد التنازلي بنجاح! يمكنك الآن حفظ الجلسة أو بدء عداد جديد"
+                            } else cur.lastCompletedMessage
+                        )
                     }
                 } else {
                     // المؤقت التصاعدي (COUNT_UP): يبدأ من 00:00 ويستمر في الصعود حتى بعد تحقيق الهدف
@@ -258,6 +295,8 @@ class StudyTimerForegroundService : Service() {
         val modeTitle = when {
             state.mode == "POMODORO" && state.isBreakPhase -> "استراحة بومودورو (${state.currentRound}/${state.pomodoroTargetRounds})"
             state.mode == "POMODORO" -> "تركيز بومودورو (${state.currentRound}/${state.pomodoroTargetRounds})"
+            state.mode == "COUNTDOWN" && state.isGoalReached -> "انتهى العداد التنازلي ⏳🎉"
+            state.mode == "COUNTDOWN" -> "عداد تنازلي متبقي: ${state.formattedTime()} ⏳"
             state.isGoalReached -> "عداد تصاعدي (تحقق الهدف + وقت إضافي 🔥)"
             else -> "عداد تصاعدي نحو الهدف (${state.targetDurationSeconds / 60} د)"
         }

@@ -11,7 +11,9 @@ import android.os.Process
 import android.provider.Settings
 import com.example.core.prayer.UmmAlQuraCalculator
 import com.example.data.BlockScheduleEntity
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.ConcurrentHashMap
 
@@ -469,6 +471,69 @@ object AppUsageMonitor {
             totalWeekMinutes = totalMins,
             averageDailyMinutes = avgMins
         )
+    }
+
+    /**
+     * جلب قائمة التطبيقات المستخدمة في يوم محدد من الأسبوع
+     */
+    fun queryAppsUsedOnDateKey(
+        context: Context,
+        dateKey: String,
+        excludedPackages: Set<String> = emptySet()
+    ): List<AppUsageStatItem> {
+        val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return emptyList()
+        val pm = context.packageManager
+        val cal = Calendar.getInstance(TimeZone.getTimeZone("GMT+03:00")).apply {
+            try {
+                val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
+                    timeZone = TimeZone.getTimeZone("GMT+03:00")
+                }
+                val d = sdf.parse(dateKey)
+                if (d != null) time = d
+            } catch (_: Exception) {}
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val dayStart = cal.timeInMillis
+        val dayEnd = dayStart + 24 * 3600_000L - 1000L
+        val now = System.currentTimeMillis()
+        val endQuery = minOf(now, dayEnd)
+        if (dayStart > endQuery) return emptyList()
+
+        val stats = try {
+            usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, dayStart, endQuery).orEmpty()
+        } catch (_: Exception) {
+            emptyList()
+        }
+
+        return stats.filter {
+            val p = it.packageName
+            p != context.packageName &&
+                p !in ProtectionManager.permanentExemptPackages &&
+                p !in excludedPackages &&
+                !p.startsWith("com.android.systemui") &&
+                !p.contains("launcher", ignoreCase = true) &&
+                it.totalTimeInForeground > 0L
+        }.map { stat ->
+            val appName = try {
+                val ai = pm.getApplicationInfo(stat.packageName, 0)
+                pm.getApplicationLabel(ai).toString()
+            } catch (_: Exception) {
+                stat.packageName
+            }
+            val secs = (stat.totalTimeInForeground / 1000L).toInt()
+            val mins = secs / 60
+            AppUsageStatItem(
+                packageName = stat.packageName,
+                appName = appName,
+                usedMinutesToday = mins,
+                usedSecondsToday = secs,
+                usedTimeMillisToday = stat.totalTimeInForeground,
+                formattedDuration = formatDurationArabic(stat.totalTimeInForeground)
+            )
+        }.sortedByDescending { it.usedTimeMillisToday }
     }
 
     /**

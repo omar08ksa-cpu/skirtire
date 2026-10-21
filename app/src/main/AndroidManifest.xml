@@ -186,6 +186,19 @@
             </intent-filter>
         </receiver>
 
+        <!-- مستقبل تغيير وحذف وإعادة تثبيت التطبيقات -->
+        <receiver
+            android:name=".core.protection.PackageChangeReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.PACKAGE_ADDED" />
+                <action android:name="android.intent.action.PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.PACKAGE_REMOVED" />
+                <data android:scheme="package" />
+            </intent-filter>
+        </receiver>
+
         <!-- ويدجت الشاشة الرئيسية لأندرويد -->
         <receiver
             android:name=".core.widget.DailyManagerAppWidgetProvider"

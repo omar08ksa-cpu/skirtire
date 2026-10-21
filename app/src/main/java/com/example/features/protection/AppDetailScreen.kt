@@ -316,16 +316,16 @@ fun AppDetailScreen(
                                 color = when (selectedImpact) {
                                     "POSITIVE" -> EmeraldDeep.copy(alpha = 0.15f)
                                     "NEGATIVE" -> PriorityHighRed.copy(alpha = 0.15f)
-                                    "IGNORED" -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                                    "EXCLUDED", "IGNORED" -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
                                     else -> MaterialTheme.colorScheme.surfaceVariant
                                 }
                             ) {
                                 Text(
                                     text = when (selectedImpact) {
-                                        "POSITIVE" -> "إيجابي 🟢"
-                                        "NEGATIVE" -> "سلبي 🔴"
-                                        "IGNORED" -> "غير مشمول 🚫"
-                                        else -> "رمادي ⚪"
+                                        "POSITIVE" -> "إيجابي"
+                                        "NEGATIVE" -> "سلبي"
+                                        "EXCLUDED", "IGNORED" -> "عدم الشمل في المدة"
+                                        else -> "محايد"
                                     },
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
@@ -819,12 +819,12 @@ fun AppDetailScreen(
                                 selected = selectedImpact == "NEGATIVE",
                                 onClick = {
                                     if (checkSuperProtectionViolation("IMPACT_CHANGE", 0, 0)) {
-                                        showSuperProtectionBlockNotice = "الحظر الخارق مفعل! يمنع تغيير تصنيف التطبيق خارج نافذة التعديل."
+                                        showSuperProtectionBlockNotice = "الحظر الخارق مفعل. يمنع تغيير تصنيف التطبيق خارج نافذة التعديل."
                                     } else {
                                         selectedImpact = "NEGATIVE"
                                     }
                                 },
-                                label = { Text("تطبيق سلبي 🔴", fontWeight = FontWeight.Bold) },
+                                label = { Text("سلبي", fontWeight = FontWeight.Bold) },
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = PriorityHighRed.copy(alpha = 0.2f),
                                     selectedLabelColor = PriorityHighRed
@@ -835,12 +835,12 @@ fun AppDetailScreen(
                                 selected = selectedImpact == "POSITIVE",
                                 onClick = {
                                     if (checkSuperProtectionViolation("IMPACT_CHANGE", 0, 0)) {
-                                        showSuperProtectionBlockNotice = "الحظر الخارق مفعل! يمنع تغيير تصنيف التطبيق خارج نافذة التعديل."
+                                        showSuperProtectionBlockNotice = "الحظر الخارق مفعل. يمنع تغيير تصنيف التطبيق خارج نافذة التعديل."
                                     } else {
                                         selectedImpact = "POSITIVE"
                                     }
                                 },
-                                label = { Text("تطبيق إيجابي 🟢", fontWeight = FontWeight.Bold) },
+                                label = { Text("إيجابي", fontWeight = FontWeight.Bold) },
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = EmeraldDeep.copy(alpha = 0.2f),
                                     selectedLabelColor = EmeraldDeep
@@ -851,24 +851,24 @@ fun AppDetailScreen(
                                 selected = selectedImpact == "NEUTRAL",
                                 onClick = {
                                     if (checkSuperProtectionViolation("IMPACT_CHANGE", 0, 0)) {
-                                        showSuperProtectionBlockNotice = "الحظر الخارق مفعل! يمنع تغيير تصنيف التطبيق خارج نافذة التعديل."
+                                        showSuperProtectionBlockNotice = "الحظر الخارق مفعل. يمنع تغيير تصنيف التطبيق خارج نافذة التعديل."
                                     } else {
                                         selectedImpact = "NEUTRAL"
                                     }
                                 },
-                                label = { Text("رمادي / محايد ⚪", fontWeight = FontWeight.Bold) }
+                                label = { Text("محايد", fontWeight = FontWeight.Bold) }
                             )
 
                             FilterChip(
-                                selected = selectedImpact == "IGNORED",
+                                selected = selectedImpact in setOf("EXCLUDED", "IGNORED"),
                                 onClick = {
                                     if (checkSuperProtectionViolation("IMPACT_CHANGE", 0, 0)) {
-                                        showSuperProtectionBlockNotice = "الحظر الخارق مفعل! يمنع تغيير تصنيف التطبيق خارج نافذة التعديل."
+                                        showSuperProtectionBlockNotice = "الحظر الخارق مفعل. يمنع تغيير تصنيف التطبيق خارج نافذة التعديل."
                                     } else {
-                                        selectedImpact = "IGNORED"
+                                        selectedImpact = "EXCLUDED"
                                     }
                                 },
-                                label = { Text("عدم الشمل في المدة 🚫", fontWeight = FontWeight.Bold) }
+                                label = { Text("عدم الشمل في التصنيف والمدة", fontWeight = FontWeight.Bold) }
                             )
                         }
                     }
@@ -949,11 +949,13 @@ fun AppDetailScreen(
 }
 
 /**
- * رسم بياني أسبوعي يعرض أيام الأسبوع بارات متناسقة
+ * رسم بياني أسبوعي يعرض أيام الأسبوع بارات متناسقة وقابلة للنقر
  */
 @Composable
 fun WeeklyBarChart(
     days: List<DayUsageItem>,
+    selectedDateKey: String? = null,
+    onDayClick: ((DayUsageItem) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val maxMinutes = remember(days) {
@@ -967,8 +969,14 @@ fun WeeklyBarChart(
     ) {
         days.forEach { day ->
             val ratio = (day.totalMinutes.toFloat() / maxMinutes.toFloat()).coerceIn(0.04f, 1f)
+            val isSelected = selectedDateKey != null && day.dateKey == selectedDateKey
+
             Column(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(enabled = onDayClick != null) { onDayClick?.invoke(day) }
+                    .padding(vertical = 4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Bottom
             ) {
@@ -980,8 +988,8 @@ fun WeeklyBarChart(
                         if (h > 0) "${h}س" else "${m}د"
                     } else "0",
                     fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (day.isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    fontWeight = if (isSelected || day.isToday) FontWeight.ExtraBold else FontWeight.Bold,
+                    color = if (isSelected || day.isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
                 Spacer(modifier = Modifier.height(4.dp))
@@ -993,9 +1001,12 @@ fun WeeklyBarChart(
                         .fillMaxHeight(ratio * 0.72f)
                         .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
                         .background(
-                            if (day.isToday) MaterialTheme.colorScheme.primary
-                            else if (day.totalMinutes > 0) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                            else MaterialTheme.colorScheme.surfaceVariant
+                            when {
+                                isSelected -> MaterialTheme.colorScheme.primary
+                                day.isToday -> MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+                                day.totalMinutes > 0 -> MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+                                else -> MaterialTheme.colorScheme.surfaceVariant
+                            }
                         )
                 )
 
@@ -1005,8 +1016,8 @@ fun WeeklyBarChart(
                 Text(
                     text = day.dayNameArabic.take(3),
                     fontSize = 11.sp,
-                    fontWeight = if (day.isToday) FontWeight.ExtraBold else FontWeight.Medium,
-                    color = if (day.isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                    fontWeight = if (isSelected || day.isToday) FontWeight.ExtraBold else FontWeight.Medium,
+                    color = if (isSelected || day.isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                 )
             }
         }

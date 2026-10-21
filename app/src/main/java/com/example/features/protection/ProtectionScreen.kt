@@ -73,6 +73,7 @@ fun ProtectionScreen(
     var showPickInstalledAppDialog by remember { mutableStateOf(false) }
     var editingAppLimitTarget by remember { mutableStateOf<BlockedAppEntity?>(null) }
     var showAddScheduleDialog by remember { mutableStateOf(false) }
+    var editingScheduleTarget by remember { mutableStateOf<BlockScheduleEntity?>(null) }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -103,21 +104,12 @@ fun ProtectionScreen(
         return
     }
 
-    val wakeAlarms = remember(uiState.blockSchedules) {
-        uiState.blockSchedules.filter { it.scheduleType == "WAKE_ALARM" }
-    }
     val sleepSchedule = remember(uiState.blockSchedules) {
         uiState.blockSchedules.firstOrNull { it.scheduleType == "SLEEP_MODE" }
     }
     val customSchedules = remember(uiState.blockSchedules) {
         uiState.blockSchedules.filter { it.scheduleType != "WAKE_ALARM" && it.scheduleType != "SLEEP_MODE" }
     }
-
-    var showAddOrEditAlarmModal by remember { mutableStateOf(false) }
-    var editingAlarmTarget by remember { mutableStateOf<BlockScheduleEntity?>(null) }
-    var targetAlarmForPlacePhoto by remember { mutableStateOf<String?>(null) }
-    var showPlaceCameraModal by remember { mutableStateOf(false) }
-    var placeCameraModalModeIsTest by remember { mutableStateOf(false) }
 
     val hasAccessibilityEnabled: Boolean = remember(uiState.blockedApps, selectedSection) {
         ProtectionManager.isAccessibilityServiceEnabled(context)
@@ -138,15 +130,15 @@ fun ProtectionScreen(
                 SegmentedButton(
                     selected = selectedSection == 0,
                     onClick = { selectedSection = 0 },
-                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 4),
+                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3),
                     icon = { Icon(Icons.Default.BarChart, contentDescription = null, modifier = Modifier.size(16.dp)) }
                 ) {
-                    Text("التطبيقات", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    Text("التطبيقات والإحصائيات", fontWeight = FontWeight.Bold, fontSize = 11.sp)
                 }
                 SegmentedButton(
                     selected = selectedSection == 1,
                     onClick = { selectedSection = 1 },
-                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 4),
+                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3),
                     icon = { Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(16.dp)) }
                 ) {
                     Text("الجداول", fontWeight = FontWeight.Bold, fontSize = 11.sp)
@@ -154,18 +146,10 @@ fun ProtectionScreen(
                 SegmentedButton(
                     selected = selectedSection == 2,
                     onClick = { selectedSection = 2 },
-                    shape = SegmentedButtonDefaults.itemShape(index = 2, count = 4),
+                    shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3),
                     icon = { Icon(Icons.Default.Shield, contentDescription = null, modifier = Modifier.size(16.dp)) }
                 ) {
-                    Text("الحظر الخارق", fontWeight = FontWeight.Bold, fontSize = 10.sp)
-                }
-                SegmentedButton(
-                    selected = selectedSection == 3,
-                    onClick = { selectedSection = 3 },
-                    shape = SegmentedButtonDefaults.itemShape(index = 3, count = 4),
-                    icon = { Icon(Icons.Default.Alarm, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                ) {
-                    Text("المنبه", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    Text("الحظر الخارق", fontWeight = FontWeight.Bold, fontSize = 11.sp)
                 }
             }
         }
@@ -536,283 +520,8 @@ fun ProtectionScreen(
                             allBlockedApps = uiState.blockedApps,
                             uiState = uiState,
                             onToggle = { viewModel.toggleScheduleEnabled(schedule) },
-                            onDelete = { viewModel.deleteBlockSchedule(schedule.id) }
-                        )
-                    }
-                }
-            }
-
-            3 -> {
-                // كارت الحماية القصوى وضمان عدم الإيقاف أو الغش (Anti-Cheat Security)
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(22.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-                        )
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(42.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            Icons.Default.Alarm,
-                                            contentDescription = null,
-                                            tint = Color.White,
-                                            modifier = Modifier.size(24.dp)
-                                        )
-                                    }
-                                }
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "المنبه الخارق (Anti-Cheat)",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.ExtraBold
-                                    )
-                                    Text(
-                                        text = "لا يمكن إيقافه من السرير إطلاقاً • قفل الصوت 100% ومنع التحايل",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-
-                            val isDeviceAdmin = ProtectionManager.isDeviceAdminActive(context)
-                            val isAccessibility = ProtectionManager.isAccessibilityServiceEnabled(context)
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Surface(
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = if (isDeviceAdmin) Color(0xFF10B981).copy(alpha = 0.15f) else Color(0xFFEF4444).copy(alpha = 0.15f),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clickable {
-                                            if (!isDeviceAdmin) {
-                                                val intent = Intent(android.app.admin.DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
-                                                    putExtra(
-                                                        android.app.admin.DevicePolicyManager.EXTRA_DEVICE_ADMIN,
-                                                        android.content.ComponentName(context, com.example.core.protection.AppDeviceAdminReceiver::class.java)
-                                                    )
-                                                    putExtra(
-                                                        android.app.admin.DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                                                        "تفعيل مسؤول الجهاز لمنع حذف التطبيق والتحايل على المنبه الخارق"
-                                                    )
-                                                }
-                                                context.startActivity(intent)
-                                            }
-                                        }
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(10.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        Icon(
-                                            if (isDeviceAdmin) Icons.Default.CheckCircle else Icons.Default.GppMaybe,
-                                            contentDescription = null,
-                                            tint = if (isDeviceAdmin) Color(0xFF10B981) else Color(0xFFEF4444),
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Text(
-                                            text = if (isDeviceAdmin) "منع الحذف مفعّل" else "تفعيل حماية الحذف",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
-
-                                Surface(
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = if (isAccessibility) Color(0xFF10B981).copy(alpha = 0.15f) else Color(0xFFEF4444).copy(alpha = 0.15f),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clickable {
-                                            if (!isAccessibility) {
-                                                context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
-                                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                                })
-                                            }
-                                        }
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(10.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        Icon(
-                                            if (isAccessibility) Icons.Default.CheckCircle else Icons.Default.GppMaybe,
-                                            contentDescription = null,
-                                            tint = if (isAccessibility) Color(0xFF10B981) else Color(0xFFEF4444),
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Text(
-                                            text = if (isAccessibility) "منع الخروج مفعّل" else "تفعيل حماية الخروج",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // كارت أقرب منبه قادم مع حساب الوقت المتبقي
-                item {
-                    val activeAlarms = wakeAlarms.filter { it.isEnabled }
-                    val nextUpcomingAlarm = activeAlarms.minByOrNull {
-                        ProtectionManager.calculateNextTriggerMillis(it.startTime24, it.daysOfWeek)
-                    }
-
-                    if (nextUpcomingAlarm != null) {
-                        val nextMillis = ProtectionManager.calculateNextTriggerMillis(nextUpcomingAlarm.startTime24, nextUpcomingAlarm.daysOfWeek)
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = Color(0xFF10B981).copy(alpha = 0.14f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.3f)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(14.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.AlarmOn,
-                                        contentDescription = null,
-                                        tint = Color(0xFF059669),
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                    Column {
-                                        Text(
-                                            text = "المنبه القادم: ${nextUpcomingAlarm.title}",
-                                            style = MaterialTheme.typography.titleSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color(0xFF065F46)
-                                        )
-                                        Text(
-                                            text = "${formatTimeArabic(nextUpcomingAlarm.startTime24)} • ${calculateRemainingTimeText(nextMillis)}",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            color = Color(0xFF047857)
-                                        )
-                                    }
-                                }
-
-                                Button(
-                                    onClick = { viewModel.triggerWakeAlarmNow(nextUpcomingAlarm) },
-                                    shape = RoundedCornerShape(10.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF059669))
-                                ) {
-                                    Text("تجربة الآن", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // ترويسة المنبهات وزر إضافة منبه جديد
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "المنبهات المجدولة (${wakeAlarms.size})",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-
-                        Button(
-                            onClick = {
-                                editingAlarmTarget = null
-                                showAddOrEditAlarmModal = true
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.testTag("add_super_alarm_btn")
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("إضافة منبه خارق", fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-
-                if (wakeAlarms.isEmpty()) {
-                    item {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(20.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(24.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.AlarmAdd,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(48.dp),
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                                Text(
-                                    text = "لا توجد منبهات خارقة حالياً",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "أضف منبهك الخارق الأول لصلاة الفجر أو العمل. لن يتوقف حتى تنهض من الفراش وتصوّر المكان المحدد!",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    textAlign = TextAlign.Center,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Button(
-                                    onClick = {
-                                        editingAlarmTarget = null
-                                        showAddOrEditAlarmModal = true
-                                    },
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Text("إنشاء منبه خارق الآن")
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    items(wakeAlarms, key = { it.id }) { alarm ->
-                        SuperAlarmCard(
-                            alarm = alarm,
-                            onToggle = { viewModel.toggleWakeAlarm(alarm) },
-                            onEdit = {
-                                editingAlarmTarget = alarm
-                                showAddOrEditAlarmModal = true
-                            },
-                            onDelete = { viewModel.deleteWakeAlarm(alarm.id) },
-                            onTestNow = { viewModel.triggerWakeAlarmNow(alarm) }
+                            onDelete = { viewModel.deleteBlockSchedule(schedule.id) },
+                            onEdit = { editingScheduleTarget = schedule }
                         )
                     }
                 }
@@ -859,14 +568,21 @@ fun ProtectionScreen(
         )
     }
 
-    if (showAddScheduleDialog) {
+    if (showAddScheduleDialog || editingScheduleTarget != null) {
+        val targetSchedule = editingScheduleTarget
         AddRichBlockScheduleModal(
+            existingSchedule = targetSchedule,
+            habits = uiState.habits,
             blockedApps = uiState.blockedApps,
             existingSchedules = customSchedules,
             usageOverview = uiState.usageOverview,
-            onDismiss = { showAddScheduleDialog = false },
-            onConfirm = { title, scheduleType, start24, end24, daysCsv, packagesCsv, targetCategory, groupLimit, sessionDuration, sessionCooldown ->
+            onDismiss = {
+                showAddScheduleDialog = false
+                editingScheduleTarget = null
+            },
+            onConfirm = { id, title, scheduleType, start24, end24, daysCsv, packagesCsv, targetCategory, groupLimit, sessionDuration, sessionCooldown, qrReferenceCode ->
                 viewModel.saveRichBlockSchedule(
+                    id = id,
                     title = title,
                     scheduleType = scheduleType,
                     startTime24 = start24,
@@ -877,38 +593,11 @@ fun ProtectionScreen(
                     groupLimitMinutes = groupLimit,
                     sessionDurationMinutes = sessionDuration,
                     sessionCooldownMinutes = sessionCooldown,
-                    isEnabled = true
+                    isEnabled = targetSchedule?.isEnabled ?: true,
+                    qrReferenceCode = qrReferenceCode
                 )
                 showAddScheduleDialog = false
-            }
-        )
-    }
-
-    if (showAddOrEditAlarmModal) {
-        AddOrEditSuperAlarmModal(
-            context = context,
-            existingAlarm = editingAlarmTarget,
-            onDismiss = { showAddOrEditAlarmModal = false },
-            onSave = { alarm ->
-                viewModel.saveWakeAlarm(alarm)
-                showAddOrEditAlarmModal = false
-            },
-            onRequestCameraPlace = { alarmId, isTestMode ->
-                targetAlarmForPlacePhoto = alarmId
-                placeCameraModalModeIsTest = isTestMode
-                showPlaceCameraModal = true
-            }
-        )
-    }
-
-    if (showPlaceCameraModal) {
-        PlaceCameraModal(
-            context = context,
-            alarmId = targetAlarmForPlacePhoto.orEmpty(),
-            isTestMode = placeCameraModalModeIsTest,
-            onDismiss = { showPlaceCameraModal = false },
-            onPhotoSaved = {
-                // تم حفظ الصورة المرجعية لهذا المنبه بنجاح
+                editingScheduleTarget = null
             }
         )
     }

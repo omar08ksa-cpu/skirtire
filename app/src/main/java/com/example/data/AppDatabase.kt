@@ -26,9 +26,11 @@ import androidx.room.RoomDatabase
         SettingEntity::class,
         CategoryEntity::class,
         QuranBookmarkEntity::class,
-        AppEventEntity::class
+        AppEventEntity::class,
+        LifeMilestoneEntity::class,
+        DailyAppUsageArchiveEntity::class
     ],
-    version = 14,
+    version = 16,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -42,6 +44,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun insightsDao(): InsightsDao
     abstract fun settingDao(): SettingDao
     abstract fun eventDao(): EventDao
+    abstract fun milestoneDao(): MilestoneDao
 
     companion object {
         @Volatile
@@ -55,6 +58,7 @@ abstract class AppDatabase : RoomDatabase() {
                     "daily_manager_local.db"
                 )
                     .fallbackToDestructiveMigration(true)
+                    .fallbackToDestructiveMigrationOnDowngrade(true)
                     .build()
                     .also { INSTANCE = it }
             }

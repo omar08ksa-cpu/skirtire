@@ -23,7 +23,7 @@ data class StudyTimerState(
     val pauseTimeMillis: Long? = null,
     val resumeTimeMillis: Long? = null,
     val completionTimeMillis: Long? = null,
-    val mode: String = "COUNT_UP", // "COUNT_UP" (مؤقت تصاعدي) أو "POMODORO" (بومودورو مخصص)
+    val mode: String = "COUNT_UP", // "COUNT_UP" (مؤقت تصاعدي) أو "COUNTDOWN" (عداد تنازلي) أو "POMODORO" (بومودورو مخصص)
     val targetDurationSeconds: Int = 30 * 60, // الهدف المطلوب بالثواني
     val elapsedSeconds: Int = 0, // إجمالي ثواني التركيز الفعلية المتراكمة
     val pomodoroFocusMinutes: Int = 25,
@@ -42,19 +42,36 @@ data class StudyTimerState(
         get() = (elapsedSeconds - targetDurationSeconds).coerceAtLeast(0)
 
     val displaySeconds: Int
-        get() = if (mode == "POMODORO") {
-            val phaseTotal = (if (isBreakPhase) pomodoroBreakMinutes else pomodoroFocusMinutes) * 60
-            val effectiveElapsed = if (phaseElapsedSeconds > 0) phaseElapsedSeconds else elapsedSeconds
-            (phaseTotal - effectiveElapsed).coerceAtLeast(0)
-        } else {
-            elapsedSeconds
+        get() = when (mode) {
+            "POMODORO" -> {
+                val phaseTotal = (if (isBreakPhase) pomodoroBreakMinutes else pomodoroFocusMinutes) * 60
+                val effectiveElapsed = if (phaseElapsedSeconds > 0) phaseElapsedSeconds else elapsedSeconds
+                (phaseTotal - effectiveElapsed).coerceAtLeast(0)
+            }
+            "COUNTDOWN" -> {
+                (targetDurationSeconds - elapsedSeconds).coerceAtLeast(0)
+            }
+            else -> {
+                elapsedSeconds
+            }
         }
 
     val progressFraction: Float
-        get() = if (targetDurationSeconds > 0) {
-            (elapsedSeconds.toFloat() / targetDurationSeconds.toFloat()).coerceIn(0f, 1f)
-        } else {
-            0f
+        get() = when (mode) {
+            "COUNTDOWN" -> {
+                if (targetDurationSeconds > 0) {
+                    (displaySeconds.toFloat() / targetDurationSeconds.toFloat()).coerceIn(0f, 1f)
+                } else {
+                    0f
+                }
+            }
+            else -> {
+                if (targetDurationSeconds > 0) {
+                    (elapsedSeconds.toFloat() / targetDurationSeconds.toFloat()).coerceIn(0f, 1f)
+                } else {
+                    0f
+                }
+            }
         }
 
     fun formattedTime(): String {
@@ -155,7 +172,11 @@ object StudyTimerManager {
 
     fun setModeAndMinutes(mode: String, targetMinutes: Int) {
         if (!_timerState.value.isActive) {
-            val normalizedMode = if (mode == "POMODORO") "POMODORO" else "COUNT_UP"
+            val normalizedMode = when (mode) {
+                "POMODORO" -> "POMODORO"
+                "COUNTDOWN" -> "COUNTDOWN"
+                else -> "COUNT_UP"
+            }
             val current = _timerState.value
             val effectiveTargetSec = if (normalizedMode == "POMODORO") {
                 current.pomodoroFocusMinutes * current.pomodoroTargetRounds * 60
@@ -169,6 +190,19 @@ object StudyTimerManager {
                 phaseElapsedSeconds = 0,
                 currentRound = 1,
                 isBreakPhase = false,
+                goalReachedNotified = false
+            )
+        }
+    }
+
+    fun setCountdownDuration(seconds: Int) {
+        if (!_timerState.value.isActive) {
+            val sec = seconds.coerceAtLeast(10)
+            _timerState.value = _timerState.value.copy(
+                mode = "COUNTDOWN",
+                targetDurationSeconds = sec,
+                elapsedSeconds = 0,
+                phaseElapsedSeconds = 0,
                 goalReachedNotified = false
             )
         }
@@ -208,7 +242,11 @@ object StudyTimerManager {
         pomodoroBreakMin: Int = _timerState.value.pomodoroBreakMinutes,
         pomodoroRounds: Int = _timerState.value.pomodoroTargetRounds
     ) {
-        val normalizedMode = if (mode == "POMODORO") "POMODORO" else "COUNT_UP"
+        val normalizedMode = when (mode) {
+            "POMODORO" -> "POMODORO"
+            "COUNTDOWN" -> "COUNTDOWN"
+            else -> "COUNT_UP"
+        }
         val effectiveTargetSec = if (normalizedMode == "POMODORO") {
             pomodoroFocusMin.coerceAtLeast(5) * pomodoroRounds.coerceAtLeast(1) * 60
         } else {
@@ -321,7 +359,11 @@ object StudyTimerManager {
         pomodoroBreakMin: Int = 5,
         pomodoroRounds: Int = 2
     ) {
-        val normalizedMode = if (mode == "POMODORO") "POMODORO" else "COUNT_UP"
+        val normalizedMode = when (mode) {
+            "POMODORO" -> "POMODORO"
+            "COUNTDOWN" -> "COUNTDOWN"
+            else -> "COUNT_UP"
+        }
         val effectiveTargetSec = if (normalizedMode == "POMODORO") {
             pomodoroFocusMin.coerceAtLeast(5) * pomodoroRounds.coerceAtLeast(1) * 60
         } else {

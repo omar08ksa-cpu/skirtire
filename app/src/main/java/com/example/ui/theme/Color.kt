@@ -131,20 +131,20 @@ val TextTertiaryLight = Color(0xFF707872)
 // ==========================================
 // 5. M3 Expressive Surfaces & Tonal Containers (Dark)
 // ==========================================
-val NightBackgroundDark = Color(0xFF0D1411)
-val NightSurfaceDark = Color(0xFF121A16)
-val NightSurfaceContainerLowestDark = Color(0xFF090E0C)
-val NightSurfaceContainerLowDark = Color(0xFF151F1A)
-val NightSurfaceContainerDark = Color(0xFF1A2621)
-val NightSurfaceContainerHighDark = Color(0xFF21302A)
-val NightSurfaceContainerHighestDark = Color(0xFF283A33)
-val NightSurfaceVariantDark = Color(0xFF202C26)
-val NightOutlineDark = Color(0xFF8C958F)
-val NightOutlineVariantDark = Color(0xFF404A44)
+val NightBackgroundDark = Color(0xFF000000)
+val NightSurfaceDark = Color(0xFF101010)
+val NightSurfaceContainerLowestDark = Color(0xFF080808)
+val NightSurfaceContainerLowDark = Color(0xFF121212)
+val NightSurfaceContainerDark = Color(0xFF161616)
+val NightSurfaceContainerHighDark = Color(0xFF1C1C1C)
+val NightSurfaceContainerHighestDark = Color(0xFF242424)
+val NightSurfaceVariantDark = Color(0xFF1A1A1A)
+val NightOutlineDark = Color(0xFF282828)
+val NightOutlineVariantDark = Color(0xFF1F1F1F)
 
-val TextPrimaryDark = Color(0xFFE8EDE9)
-val TextSecondaryDark = Color(0xFFAAB4AE)
-val TextTertiaryDark = Color(0xFF7A8680)
+val TextPrimaryDark = Color(0xFFFFFFFF)
+val TextSecondaryDark = Color(0xFF8E8E93)
+val TextTertiaryDark = Color(0xFF5A5A60)
 
 // ==========================================
 // 6. Semantic Alerts & Expressive Status

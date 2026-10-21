@@ -11,6 +11,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
@@ -102,78 +104,14 @@ fun StudyScreen(
         } else null
     }
 
-    Scaffold(
-        topBar = {
-            Surface(
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 2.dp
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            modifier = Modifier.size(42.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.Timer,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            }
-                        }
-                        Column {
-                            Text(
-                                text = "العداد",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.ExtraBold
-                            )
-                            Text(
-                                text = "مؤقت التركيز والإنجاز الذكي",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    // زر فتح وضع الستاند باي المباشر
-                    FilledTonalButton(
-                        onClick = { viewModel.openStandbyMode() },
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                        ),
-                        modifier = Modifier.testTag("open_standby_top_btn")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ScreenRotation,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Standby", fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-        }
-    ) { innerPadding ->
+    Scaffold(contentWindowInsets = WindowInsets(0.dp)) { innerPadding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
-            contentPadding = PaddingValues(top = 12.dp, bottom = 96.dp)
+            contentPadding = PaddingValues(top = 4.dp, bottom = 96.dp)
         ) {
             // 1. اقتراح الربط بآخر ربط تم (إذا كان المؤقت غير نشط وغير مرتبط حالياً)
             if (timerState.linkedType == "NONE" && !timerState.isActive && !dismissedLastLinkPrompt && lastLinkInfo != null) {
@@ -214,7 +152,7 @@ fun StudyScreen(
                         StudyTimerManager.setModeAndMinutes(mode, targetMins)
                     },
                     onSelectTargetMinutes = { mins ->
-                        StudyTimerManager.setModeAndMinutes("COUNT_UP", mins)
+                        StudyTimerManager.setModeAndMinutes(timerState.mode, mins)
                     },
                     onOpenPomodoroSettings = { showCustomPomodoroDialog = true },
                     onStart = {
@@ -234,7 +172,7 @@ fun StudyScreen(
                     onTogglePause = { StudyTimerManager.togglePauseResume(context) },
                     onFinishAndSave = { StudyTimerManager.finishAndSaveSession(context) },
                     onCancel = { StudyTimerManager.cancelTimer(context) },
-                    onOpenStandby = { viewModel.openStandbyMode() }
+                    superProtectionEnabled = uiState.superProtectionEnabled
                 )
             }
 
@@ -538,10 +476,28 @@ private fun MainCounterCard(
     onTogglePause: () -> Unit,
     onFinishAndSave: () -> Unit,
     onCancel: () -> Unit,
-    onOpenStandby: () -> Unit
+    superProtectionEnabled: Boolean = false
 ) {
     val targetMins = (timerState.targetDurationSeconds / 60).coerceAtLeast(1)
     val extraMinutes = timerState.extraSecondsBeyondGoal / 60
+    var showSuperProtectionLockAlert by remember { mutableStateOf(false) }
+
+    val isLockedBySuperProtection = remember(
+        superProtectionEnabled,
+        timerState.mode,
+        timerState.elapsedSeconds,
+        timerState.targetDurationSeconds,
+        timerState.currentRound,
+        timerState.pomodoroTargetRounds,
+        timerState.isGoalReached
+    ) {
+        if (!superProtectionEnabled) false
+        else when (timerState.mode) {
+            "COUNTDOWN" -> !timerState.isGoalReached && timerState.elapsedSeconds < timerState.targetDurationSeconds
+            "POMODORO" -> timerState.currentRound <= timerState.pomodoroTargetRounds && !timerState.isGoalReached
+            else -> false
+        }
+    }
 
     Card(
         modifier = Modifier
@@ -558,42 +514,47 @@ private fun MainCounterCard(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // اختيار نمط العداد: مؤقت تصاعدي أو بومودورو مخصص + زر وضع Standby
+            // اختيار نمط العداد: مؤقت تصاعدي أو تنازلي أو بومودورو
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     FilterChip(
                         selected = timerState.mode == "COUNT_UP",
                         onClick = { if (!timerState.isActive) onSelectMode("COUNT_UP") },
-                        label = { Text("مؤقت تصاعدي", fontWeight = FontWeight.Bold) },
+                        label = { Text("تصاعدي", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
                         leadingIcon = {
-                            Icon(Icons.Default.Timer, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.Timer, contentDescription = null, modifier = Modifier.size(14.dp))
+                        }
+                    )
+                    FilterChip(
+                        selected = timerState.mode == "COUNTDOWN",
+                        onClick = { if (!timerState.isActive) onSelectMode("COUNTDOWN") },
+                        label = { Text("تنازلي", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
+                        leadingIcon = {
+                            Icon(Icons.Default.HourglassBottom, contentDescription = null, modifier = Modifier.size(14.dp))
                         }
                     )
                     FilterChip(
                         selected = timerState.mode == "POMODORO",
                         onClick = { if (!timerState.isActive) onSelectMode("POMODORO") },
-                        label = { Text("بومودورو", fontWeight = FontWeight.Bold) },
+                        label = { Text("بومودورو", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
                         leadingIcon = {
-                            Icon(Icons.Default.HourglassTop, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.HourglassTop, contentDescription = null, modifier = Modifier.size(14.dp))
                         }
                     )
-                }
-
-                FilledTonalIconButton(
-                    onClick = onOpenStandby,
-                    modifier = Modifier.testTag("standby_icon_btn")
-                ) {
-                    Icon(Icons.Default.ScreenRotation, contentDescription = "وضع Standby")
                 }
             }
 
             // حلقة العداد الدائرية
             val primaryColor = MaterialTheme.colorScheme.primary
             val trackColor = MaterialTheme.colorScheme.surfaceVariant
+            val isCountUpUnlinked = timerState.mode == "COUNT_UP" && timerState.linkedType != "HABIT"
+
             Box(
                 modifier = Modifier.size(220.dp),
                 contentAlignment = Alignment.Center
@@ -604,10 +565,19 @@ private fun MainCounterCard(
                         color = trackColor,
                         style = Stroke(width = strokeWidth)
                     )
+                    val sweep = if (isCountUpUnlinked) {
+                        if (timerState.isActive) {
+                            360f * ((timerState.elapsedSeconds % 60) / 60f).coerceAtLeast(0.02f)
+                        } else {
+                            360f
+                        }
+                    } else {
+                        360f * timerState.progressFraction
+                    }
                     drawArc(
-                        color = if (timerState.isGoalReached) MintAccent else primaryColor,
+                        color = if (timerState.isGoalReached && !isCountUpUnlinked) MintAccent else primaryColor,
                         startAngle = -90f,
-                        sweepAngle = 360f * timerState.progressFraction,
+                        sweepAngle = sweep,
                         useCenter = false,
                         style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
                     )
@@ -624,7 +594,7 @@ private fun MainCounterCard(
                         ) {
                             Text(
                                 text = if (timerState.isBreakPhase) {
-                                    "فترة راحة ☕"
+                                    "فترة راحة"
                                 } else {
                                     "جولة ${UmmAlQuraCalculator.toArabicDigits(timerState.currentRound.toString())}/${UmmAlQuraCalculator.toArabicDigits(timerState.pomodoroTargetRounds.toString())}"
                                 },
@@ -644,21 +614,32 @@ private fun MainCounterCard(
                     )
 
                     Text(
-                        text = if (timerState.isGoalReached && extraMinutes > 0) {
-                            UmmAlQuraCalculator.toArabicDigits("تم الهدف ($targetMins د) • +$extraMinutes د إضافية 🔥")
-                        } else if (timerState.isGoalReached) {
-                            UmmAlQuraCalculator.toArabicDigits("اكتمل الهدف المطلوب ($targetMins د) ✅")
-                        } else {
-                            UmmAlQuraCalculator.toArabicDigits("الهدف: $targetMins دقيقة")
+                        text = when {
+                            isCountUpUnlinked -> {
+                                if (timerState.isActive) "مؤقت تصاعدي جاري" else "مؤقت تصاعدي مفتوح"
+                            }
+                            timerState.mode == "COUNTDOWN" -> {
+                                if (timerState.isGoalReached) "انتهى العد التنازلي"
+                                else UmmAlQuraCalculator.toArabicDigits("عداد تنازلي متبقي من $targetMins د")
+                            }
+                            timerState.isGoalReached && extraMinutes > 0 -> {
+                                UmmAlQuraCalculator.toArabicDigits("تم الهدف ($targetMins د) • +$extraMinutes د إضافية")
+                            }
+                            timerState.isGoalReached -> {
+                                UmmAlQuraCalculator.toArabicDigits("اكتمل الهدف المطلوب ($targetMins د)")
+                            }
+                            else -> {
+                                UmmAlQuraCalculator.toArabicDigits("الهدف: $targetMins دقيقة")
+                            }
                         },
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (timerState.isGoalReached) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (timerState.isGoalReached && !isCountUpUnlinked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
 
-            // مؤشرات التوقف والاستئناف المباشرة أثناء الجلسة (المطلب ٣)
+            // مؤشرات التوقف والاستئناف المباشرة أثناء الجلسة
             if (timerState.isActive) {
                 Surface(
                     shape = RoundedCornerShape(12.dp),
@@ -675,21 +656,21 @@ private fun MainCounterCard(
                     ) {
                         if (timerState.isPaused) {
                             Text(
-                                text = "⏸️ تم الإيقاف المؤقت الساعة: ${timerState.formattedPauseTime()}",
+                                text = "تم الإيقاف المؤقت الساعة: ${timerState.formattedPauseTime()}",
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onErrorContainer
                             )
                         } else if (!timerState.resumeTimeMillis.isNullOrZero()) {
                             Text(
-                                text = "▶️ تم الاستئناف الساعة: ${timerState.formattedResumeTime()} (بدأت: ${timerState.formattedStartTime()})",
+                                text = "تم الاستئناف الساعة: ${timerState.formattedResumeTime()} (بدأت: ${timerState.formattedStartTime()})",
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer
                             )
                         } else {
                             Text(
-                                text = "🟢 الجلسة جارية • بدأت الساعة: ${timerState.formattedStartTime()}",
+                                text = "الجلسة جارية • بدأت الساعة: ${timerState.formattedStartTime()}",
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer
@@ -699,24 +680,77 @@ private fun MainCounterCard(
                 }
             }
 
-            // تخصيص الهدف قبل البدء
+            // تخصيص الهدف قبل البدء (فقط للعداد التنازلي أو المؤقت المرتبط بعادة)
             if (!timerState.isActive) {
-                if (timerState.mode == "COUNT_UP") {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
+                if (timerState.mode == "COUNTDOWN") {
+                    var countdownInputText by remember(targetMins) { mutableStateOf(targetMins.toString()) }
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        listOf(15, 25, 30, 45, 60, 90, 120).forEach { mins ->
-                            FilterChip(
-                                selected = targetMins == mins,
-                                onClick = { onSelectTargetMinutes(mins) },
-                                label = { Text(UmmAlQuraCalculator.toArabicDigits("$mins د"), fontWeight = FontWeight.Bold) }
-                            )
+                        Text(
+                            text = "مدة العداد التنازلي:",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        OutlinedTextField(
+                            value = countdownInputText,
+                            onValueChange = { input ->
+                                val clean = input.filter { it.isDigit() }.take(4)
+                                countdownInputText = clean
+                                val mins = clean.toIntOrNull() ?: 1
+                                if (mins > 0) {
+                                    onSelectTargetMinutes(mins)
+                                }
+                            },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .width(180.dp)
+                                .testTag("countdown_duration_input"),
+                            trailingIcon = {
+                                Text(
+                                    text = "دقيقة",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(end = 12.dp)
+                                )
+                            }
+                        )
+                    }
+                } else if (timerState.mode == "COUNT_UP" && timerState.linkedType == "HABIT") {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "الهدف الزمني اليومي للعادة:",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)
+                        ) {
+                            val presetMinutes = listOf(15, 25, 30, 45, 60, 90, 120)
+                            presetMinutes.forEach { mins ->
+                                FilterChip(
+                                    selected = targetMins == mins,
+                                    onClick = { onSelectTargetMinutes(mins) },
+                                    label = { Text(UmmAlQuraCalculator.toArabicDigits("$mins د"), fontWeight = FontWeight.Bold, fontSize = 12.sp) }
+                                )
+                            }
                         }
                     }
-                } else {
+                } else if (timerState.mode == "POMODORO") {
                     OutlinedButton(onClick = onOpenPomodoroSettings) {
                         Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
@@ -731,30 +765,16 @@ private fun MainCounterCard(
 
             // أزرار التحكم
             if (!timerState.isActive) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                Button(
+                    onClick = onStart,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                        .testTag("start_timer_btn")
                 ) {
-                    Button(
-                        onClick = onStart,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(52.dp)
-                            .testTag("start_timer_btn")
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("بدء الجلسة", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
-                    }
-
-                    FilledTonalButton(
-                        onClick = onOpenStandby,
-                        modifier = Modifier.height(52.dp)
-                    ) {
-                        Icon(Icons.Default.ScreenRotation, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("وضع Standby", fontWeight = FontWeight.Bold)
-                    }
+                    Icon(Icons.Default.PlayArrow, contentDescription = null)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("بدء الجلسة", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
                 }
             } else {
                 Row(
@@ -777,27 +797,68 @@ private fun MainCounterCard(
                     }
 
                     Button(
-                        onClick = onFinishAndSave,
+                        onClick = {
+                            if (isLockedBySuperProtection) {
+                                showSuperProtectionLockAlert = true
+                            } else {
+                                onFinishAndSave()
+                            }
+                        },
                         modifier = Modifier
                             .weight(1f)
                             .height(48.dp)
                             .testTag("finish_save_timer_btn")
                     ) {
-                        Icon(Icons.Default.Check, contentDescription = null)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("إنهاء وحفظ", fontWeight = FontWeight.Bold)
+                        if (isLockedBySuperProtection) {
+                            Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                        } else {
+                            Icon(Icons.Default.Check, contentDescription = null)
+                            Spacer(modifier = Modifier.width(4.dp))
+                        }
+                        Text(if (isLockedBySuperProtection) "مقفل (حظر خارق)" else "إنهاء وحفظ", fontWeight = FontWeight.Bold)
                     }
 
-                    IconButton(onClick = onCancel) {
+                    IconButton(
+                        onClick = {
+                            if (isLockedBySuperProtection) {
+                                showSuperProtectionLockAlert = true
+                            } else {
+                                onCancel()
+                            }
+                        }
+                    ) {
                         Icon(
-                            imageVector = Icons.Default.Close,
+                            imageVector = if (isLockedBySuperProtection) Icons.Default.Lock else Icons.Default.Close,
                             contentDescription = "إلغاء",
-                            tint = MaterialTheme.colorScheme.error
+                            tint = if (isLockedBySuperProtection) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error
                         )
                     }
                 }
             }
         }
+    }
+
+    if (showSuperProtectionLockAlert) {
+        AlertDialog(
+            onDismissRequest = { showSuperProtectionLockAlert = false },
+            icon = { Icon(Icons.Default.Shield, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+            title = { Text("الحظر الخارق مفعل", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    text = if (timerState.mode == "COUNTDOWN") {
+                        "لا يمكن إنهاء أو إلغاء العداد التنازلي قبل اكتمال كامل الوقت المحدد، التزاماً بقواعد الحظر الخارق."
+                    } else {
+                        "لا يمكن إنهاء أو إلغاء البومودورو قبل إتمام كافة الجولات المطلوبة، التزاماً بقواعد الحظر الخارق."
+                    }
+                )
+            },
+            confirmButton = {
+                Button(onClick = { showSuperProtectionLockAlert = false }) {
+                    Text("حسناً، سأواصل")
+                }
+            }
+        )
     }
 }
 
@@ -877,7 +938,7 @@ private fun HistorySectionHeader(
                 },
                 label = {
                     Text(
-                        if (isCustomDate) UmmAlQuraCalculator.toArabicDigits(selectedDateKey) else "اختر تاريخ 📅",
+                        if (isCustomDate) UmmAlQuraCalculator.toArabicDigits(selectedDateKey) else "اختر تاريخ",
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -974,20 +1035,20 @@ private fun SessionDetailTimelineCard(session: StudySessionEntity) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "🟢 بدأت: $startTimeStr",
+                    text = "بدأت: $startTimeStr",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 if (pauseTimeStr != null) {
                     Text(
-                        text = "⏸️ توقفت: $pauseTimeStr",
+                        text = "توقفت: $pauseTimeStr",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error,
                         fontWeight = FontWeight.Bold
                     )
                 }
                 Text(
-                    text = "✅ اكتملت: $endTimeStr",
+                    text = "اكتملت: $endTimeStr",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Bold

@@ -20,13 +20,15 @@ class AdhanAlarmReceiver : BroadcastReceiver() {
         val prayerId = intent?.getStringExtra(AdhanNotificationHelper.EXTRA_PRAYER_ID) ?: PrayerType.FAJR.id
         val cityName = intent?.getStringExtra(AdhanNotificationHelper.EXTRA_CITY_NAME) ?: "الرياض"
         val isTest = intent?.getBooleanExtra(AdhanNotificationHelper.EXTRA_IS_TEST, false) ?: false
+        val bellMode = intent?.getStringExtra(AdhanNotificationHelper.EXTRA_BELL_MODE)
 
         val prayerType = PrayerType.fromId(prayerId)
         AdhanNotificationHelper.showAdhanNotification(
             context = context,
             prayerType = prayerType,
             cityName = cityName,
-            isTest = isTest
+            isTest = isTest,
+            explicitBellMode = bellMode
         )
 
         val pendingResult = goAsync()

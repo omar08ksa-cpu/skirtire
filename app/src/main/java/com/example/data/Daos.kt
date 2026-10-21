@@ -134,6 +134,9 @@ interface ProtectionDao {
     @Query("SELECT * FROM blocked_apps WHERE id = :id LIMIT 1")
     suspend fun getBlockedAppById(id: String): BlockedAppEntity?
 
+    @Query("SELECT * FROM blocked_apps WHERE packageName = :packageName AND deletedAt IS NULL LIMIT 1")
+    suspend fun getBlockedAppByPackage(packageName: String): BlockedAppEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertBlockedApp(app: BlockedAppEntity)
 
@@ -160,6 +163,21 @@ interface ProtectionDao {
 
     @Query("UPDATE block_schedules SET deletedAt = :now, updatedAt = :now WHERE id = :id")
     suspend fun softDeleteBlockSchedule(id: String, now: Long = System.currentTimeMillis())
+
+    @Query("SELECT * FROM daily_app_usage_archive WHERE dateKey = :dateKey ORDER BY usedSeconds DESC")
+    fun observeDailyUsageArchive(dateKey: String): Flow<List<DailyAppUsageArchiveEntity>>
+
+    @Query("SELECT * FROM daily_app_usage_archive WHERE dateKey = :dateKey ORDER BY usedSeconds DESC")
+    suspend fun getDailyUsageArchiveOnce(dateKey: String): List<DailyAppUsageArchiveEntity>
+
+    @Query("SELECT * FROM daily_app_usage_archive WHERE packageName = :packageName ORDER BY dateKey DESC")
+    suspend fun getPackageUsageHistory(packageName: String): List<DailyAppUsageArchiveEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertDailyUsageArchives(items: List<DailyAppUsageArchiveEntity>)
+
+    @Query("UPDATE blocked_apps SET isUninstalled = :uninstalled, updatedAt = :now WHERE packageName = :packageName")
+    suspend fun setAppUninstalledStatus(packageName: String, uninstalled: Boolean, now: Long = System.currentTimeMillis())
 }
 
 @Dao
@@ -307,5 +325,17 @@ interface EventDao {
 
     @Query("UPDATE app_events SET deletedAt = :now, updatedAt = :now WHERE id = :id")
     suspend fun deleteEvent(id: String, now: Long = System.currentTimeMillis())
+}
+
+@Dao
+interface MilestoneDao {
+    @Query("SELECT * FROM life_milestones ORDER BY dateKey ASC")
+    fun observeMilestones(): Flow<List<LifeMilestoneEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertMilestone(milestone: LifeMilestoneEntity)
+
+    @Query("DELETE FROM life_milestones WHERE id = :id")
+    suspend fun deleteMilestone(id: String)
 }
 

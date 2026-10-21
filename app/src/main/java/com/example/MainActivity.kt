@@ -21,6 +21,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -57,8 +58,11 @@ import com.example.features.protection.AppBlockedFullScreenOverlay
 import com.example.features.protection.ProtectionScreen
 import com.example.features.study.StudyScreen
 import com.example.features.tasks.TasksScreen
+import com.example.features.productivity.ProductivityHub
+import com.example.features.settings.SettingsScreen
 import com.example.features.prayer.PrayerSettingsAndAlarmsScreen
 import com.example.features.prayer.PrayerCalendarScreen
+import com.example.features.calendar.MainEventsCalendarScreen
 import com.example.features.prayer.KhatmahPlannerDialog
 import com.example.features.system.SystemAndRoadmapScreen
 import androidx.compose.ui.window.Dialog
@@ -79,10 +83,9 @@ enum class MainDestination(
 ) {
     TODAY(0, "الرئيسية", Icons.Filled.Home, Icons.Outlined.Home, "nav_today"),
     RELIGIOUS(1, "ديني", Icons.Filled.Mosque, Icons.Outlined.Mosque, "nav_religious"),
-    HABITS(2, "العادات", Icons.Filled.TrackChanges, Icons.Outlined.TrackChanges, "nav_habits"),
-    TASKS(3, "المهام", Icons.Filled.Checklist, Icons.Outlined.Checklist, "nav_tasks"),
-    COUNTER(4, "العداد", Icons.Filled.Timer, Icons.Outlined.Timer, "nav_counter"),
-    BLOCKER(5, "الحظر", Icons.Filled.Shield, Icons.Outlined.Shield, "nav_blocker");
+    PRODUCTIVITY(2, "الإنتاجية", Icons.Filled.Checklist, Icons.Outlined.Checklist, "nav_productivity"),
+    BLOCKER(3, "الحظر", Icons.Filled.Shield, Icons.Outlined.Shield, "nav_blocker"),
+    SETTINGS(4, "الإعدادات", Icons.Filled.Settings, Icons.Outlined.Settings, "nav_settings");
 
     companion object {
         fun fromIndex(idx: Int): MainDestination = entries.find { it.index == idx } ?: TODAY
@@ -167,8 +170,7 @@ class MainActivity : ComponentActivity() {
                     }
 
                     isCalendarScreenOpen -> {
-                        PrayerCalendarScreen(
-                            currentCity = uiState.selectedCity,
+                        MainEventsCalendarScreen(
                             onBack = { isCalendarScreenOpen = false },
                             viewModel = mainViewModel,
                             uiState = uiState
@@ -311,8 +313,8 @@ fun DailyManagerMainScaffold(
     onOpenCalendar: () -> Unit = {}
 ) {
     var selectedDestination by rememberSaveable { mutableStateOf(MainDestination.TODAY) }
-    var isFullScreenSubScreen by rememberSaveable { mutableStateOf(false) }
-    var showSettingsDialog by remember { mutableStateOf(false) }
+    var productivityInitialTab by rememberSaveable { mutableIntStateOf(0) }
+    var religiousInitialSubScreen by rememberSaveable { mutableStateOf("MAIN") }
     var showPrayerSettingsDialog by remember { mutableStateOf(false) }
     var showSystemSettingsDialog by remember { mutableStateOf(false) }
     var showKhatmahPlannerDialog by remember { mutableStateOf(false) }
@@ -325,135 +327,53 @@ fun DailyManagerMainScaffold(
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
-        topBar = {
-            if (!isFullScreenSubScreen) {
-                TopAppBar(
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = selectedDestination.selectedIcon,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-                        Text(
-                            text = selectedDestination.title,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                    }
-                },
-                actions = {
-                    // زر الذكاء الاصطناعي التعبيري المميز
-                    FilledTonalButton(
-                        onClick = onOpenAiAssistant,
-                        modifier = Modifier.testTag("open_ai_assistant_top_btn"),
-                        shape = RoundedCornerShape(14.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.AutoAwesome,
-                            contentDescription = "مساعد الذكاء الاصطناعي",
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "AI",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    IconButton(
-                        onClick = onOpenCalendar,
-                        modifier = Modifier.testTag("open_calendar_top_btn")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.CalendarMonth,
-                            contentDescription = "التقويم والأحداث"
-                        )
-                    }
-                    IconButton(
-                        onClick = { viewModel.openStandbyMode() },
-                        modifier = Modifier.testTag("open_standby_top_btn")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.ScreenRotation,
-                            contentDescription = "وضع الستاند باي"
-                        )
-                    }
-                    IconButton(
-                        onClick = { showSettingsDialog = true },
-                        modifier = Modifier.testTag("open_settings_btn")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Settings,
-                            contentDescription = "الإعدادات"
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLowest
-                )
-            )
-            }
-        },
+        contentWindowInsets = WindowInsets.statusBars,
         bottomBar = {
-            if (!isFullScreenSubScreen) {
-                NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                    tonalElevation = 2.dp
-                ) {
-                    MainDestination.entries.forEach { destination ->
-                        val isSelected = selectedDestination == destination
-                        NavigationBarItem(
-                            selected = isSelected,
-                            onClick = { selectedDestination = destination },
-                            icon = {
-                                Icon(
-                                    imageVector = if (isSelected) destination.selectedIcon else destination.unselectedIcon,
-                                    contentDescription = destination.title
-                                )
-                            },
-                            label = {
-                                Text(
-                                    text = destination.title,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium,
-                                    maxLines = 1
-                                )
-                            },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                                selectedTextColor = MaterialTheme.colorScheme.primary
-                            ),
-                            modifier = Modifier.testTag(destination.tag)
-                        )
-                    }
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                tonalElevation = 2.dp
+            ) {
+                MainDestination.entries.forEach { destination ->
+                    val isSelected = selectedDestination == destination
+                    NavigationBarItem(
+                        selected = isSelected,
+                        onClick = { selectedDestination = destination },
+                        icon = {
+                            Icon(
+                                imageVector = if (isSelected) destination.selectedIcon else destination.unselectedIcon,
+                                contentDescription = destination.title
+                            )
+                        },
+                        label = {
+                            Text(
+                                text = destination.title,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium,
+                                maxLines = 1
+                            )
+                        },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedTextColor = MaterialTheme.colorScheme.primary
+                        ),
+                        modifier = Modifier.testTag(destination.tag)
+                    )
                 }
             }
         }
     ) { innerPadding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(
+                    top = innerPadding.calculateTopPadding(),
+                    bottom = innerPadding.calculateBottomPadding()
+                )
         ) {
+            Column(
+                modifier = Modifier.fillMaxSize()
+            ) {
             AnimatedVisibility(visible = uiState.statusBannerMessage != null) {
                 uiState.statusBannerMessage?.let { msg ->
                     Surface(
@@ -514,7 +434,8 @@ fun DailyManagerMainScaffold(
                             },
                             onStartHabitTimer = { habit ->
                                 viewModel.startHabitTimer(habit)
-                                selectedDestination = MainDestination.COUNTER
+                                productivityInitialTab = 0
+                                selectedDestination = MainDestination.PRODUCTIVITY
                             },
                             onToggleTask = { taskId ->
                                 viewModel.toggleTask(taskId)
@@ -545,48 +466,52 @@ fun DailyManagerMainScaffold(
                                 selectedDestination = MainDestination.fromIndex(tabIdx)
                             },
                             onOpenAiAssistant = onOpenAiAssistant,
-                            onOpenGoogleSettings = { showSettingsDialog = true },
-                            onRefreshGoogle = {
-                                viewModel.refreshGoogleCalendarEvents()
-                                viewModel.refreshGmailMessages()
+                            onOpenCalendar = {
+                                productivityInitialTab = 2
+                                selectedDestination = MainDestination.PRODUCTIVITY
                             },
-                            onAddEmailTask = { emailItem ->
-                                viewModel.addEmailTaskDirectly(emailItem)
+                            onOpenProductivityTab = { tab ->
+                                productivityInitialTab = tab
+                                selectedDestination = MainDestination.PRODUCTIVITY
                             },
-                            onOpenCalendar = onOpenCalendar
+                            onCompleteAthkar = { catCode ->
+                                viewModel.completeAthkarCategory(catCode)
+                            },
+                            onOpenQuran = {
+                                religiousInitialSubScreen = "QURAN_READER"
+                                selectedDestination = MainDestination.RELIGIOUS
+                            }
                         )
 
                         MainDestination.RELIGIOUS -> PrayerScreen(
                             uiState = uiState,
                             viewModel = viewModel,
-                            onFullScreenChange = { isFullScreen ->
-                                isFullScreenSubScreen = isFullScreen
-                            }
+                            initialSubScreen = religiousInitialSubScreen,
+                            onSubScreenConsumed = { religiousInitialSubScreen = "MAIN" }
                         )
 
-                        MainDestination.HABITS -> HabitsScreen(
+                        MainDestination.PRODUCTIVITY -> ProductivityHub(
                             uiState = uiState,
                             viewModel = viewModel,
-                            onStartHabitTimer = { habit ->
-                                viewModel.startHabitTimer(habit)
-                                selectedDestination = MainDestination.COUNTER
+                            initialTab = productivityInitialTab,
+                            onTabSelected = { tab ->
+                                productivityInitialTab = tab
                             },
                             onNavigateToReligious = {
+                                selectedDestination = MainDestination.RELIGIOUS
+                            },
+                            onNavigateToQuran = {
+                                religiousInitialSubScreen = "QURAN_READER"
                                 selectedDestination = MainDestination.RELIGIOUS
                             }
                         )
 
-                        MainDestination.TASKS -> TasksScreen(
-                            uiState = uiState,
-                            viewModel = viewModel
-                        )
-
-                        MainDestination.COUNTER -> StudyScreen(
-                            uiState = uiState,
-                            viewModel = viewModel
-                        )
-
                         MainDestination.BLOCKER -> ProtectionScreen(
+                            uiState = uiState,
+                            viewModel = viewModel
+                        )
+
+                        MainDestination.SETTINGS -> SettingsScreen(
                             uiState = uiState,
                             viewModel = viewModel
                         )
@@ -595,26 +520,7 @@ fun DailyManagerMainScaffold(
             }
         }
     }
-
-    if (showSettingsDialog) {
-        AppSettingsAndSyncModal(
-            uiState = uiState,
-            viewModel = viewModel,
-            onOpenPrayerSettings = {
-                showSettingsDialog = false
-                showPrayerSettingsDialog = true
-            },
-            onOpenSystemSettings = {
-                showSettingsDialog = false
-                showSystemSettingsDialog = true
-            },
-            onOpenKhatmahPlan = {
-                showSettingsDialog = false
-                showKhatmahPlannerDialog = true
-            },
-            onDismiss = { showSettingsDialog = false }
-        )
-    }
+}
 
     if (showPrayerSettingsDialog) {
         Dialog(
@@ -685,10 +591,6 @@ private fun AppSettingsAndSyncModal(
     ) { _ ->
         viewModel.refreshHealthConnectNow(silent = false)
     }
-
-    var showGoogleConnectDialog by remember { mutableStateOf(false) }
-    var manualTokenInput by remember { mutableStateOf("") }
-
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("الإعدادات والمزامنة", fontWeight = FontWeight.ExtraBold) },
@@ -969,121 +871,7 @@ private fun AppSettingsAndSyncModal(
 
                 HorizontalDivider()
 
-                // 3. ربط حساب Google (Calendar و Gmail)
-                Text(
-                    text = "Google Workspace (التقويم والبريد)",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-
-                if (uiState.isGoogleConnected) {
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.CheckCircle,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Text(
-                                        text = "الحساب متصل بنجاح",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                                Text(
-                                    text = uiState.googleUserEmail ?: "",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-
-                            Text(
-                                text = "الصلاحيات النشطة: تقويم Google (Calendar) • بريد Gmail (استخراج المهام)",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                FilledTonalButton(
-                                    onClick = {
-                                        viewModel.refreshGoogleCalendarEvents()
-                                        viewModel.refreshGmailMessages()
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(10.dp)
-                                ) {
-                                    Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("مزامنة الآن", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                                }
-
-                                OutlinedButton(
-                                    onClick = { viewModel.disconnectGoogleAccount() },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(10.dp),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                                ) {
-                                    Icon(Icons.Default.LinkOff, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("فصل الحساب", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = "اربط حساب Google لمزامنة مواعيد اليوم مع تقويم Google تلقائياً، واستخراج المهام الذكية من رسائل بريد Gmail.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-
-                            Button(
-                                onClick = { showGoogleConnectDialog = true },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Icon(Icons.Default.CloudSync, contentDescription = null)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("ربط حساب Google (Calendar & Gmail)", fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
-
-                HorizontalDivider()
-
-                // 4. معلومات مدينة مواقيت الصلاة
+                // معلومات مدينة مواقيت الصلاة
                 Text(
                     text = "مدينة مواقيت الصلاة: ${uiState.selectedCity.arabicName}",
                     style = MaterialTheme.typography.bodyMedium,
@@ -1097,67 +885,4 @@ private fun AppSettingsAndSyncModal(
             }
         }
     )
-
-    if (showGoogleConnectDialog) {
-        AlertDialog(
-            onDismissRequest = { showGoogleConnectDialog = false },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Default.AccountCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Text("ربط حساب Google", fontWeight = FontWeight.ExtraBold)
-                }
-            },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text(
-                        text = "سيتم ربط حسابك: omar008ksa@gmail.com وتفعيل مزامنة تقويم Google (Calendar) ورسائل بريد Gmail واستخراج المهام تلقائياً.",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("الصلاحيات المعتمدة:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                            Text("• https://www.googleapis.com/auth/calendar.events", style = MaterialTheme.typography.labelSmall)
-                            Text("• https://www.googleapis.com/auth/gmail.readonly", style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-
-                    OutlinedTextField(
-                        value = manualTokenInput,
-                        onValueChange = { manualTokenInput = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("رمز الدخول (Access Token أو اختياري)") },
-                        placeholder = { Text("اتركه فارغاً للتفعيل الفوري عبر OAuth") },
-                        shape = RoundedCornerShape(12.dp),
-                        singleLine = true
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val tokenToUse = manualTokenInput.trim().ifEmpty {
-                            "ya29.aistudio_authorized_workspace_oauth_token"
-                        }
-                        viewModel.saveGoogleAccessToken(tokenToUse, "omar008ksa@gmail.com")
-                        showGoogleConnectDialog = false
-                    }
-                ) {
-                    Text("تأكيد الربط والبدء ✅", fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showGoogleConnectDialog = false }) {
-                    Text("إلغاء")
-                }
-            }
-        )
-    }
 }
